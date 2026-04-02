@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from random import Random
 from typing import Iterable
+
+from .models import DiversityState
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +106,67 @@ STYLE_TEMPLATES = {
 }
 
 
+STYLE_FRAGMENTS = {
+    "话少冷淡型": {
+        "openers": ["真行。", "行吧。", "又这样。", "嗯。"],
+        "bridges": ["{event}", "偏偏是 {event}", "结果是 {event}"],
+        "reactions": [
+            "我现在只想把今天整个删掉。",
+            "这点破事已经够把人磨空了。",
+            "我连骂都懒得骂，只觉得烦。",
+        ],
+        "closers": ["算了。", "真没劲。", "我不想再装没事。"],
+    },
+    "碎碎念型": {
+        "openers": ["我真的服了，", "不是，", "你听我说，", "我现在脑子都乱了，"],
+        "bridges": ["{event}", "偏偏又是 {event}", "居然还能碰上 {event}"],
+        "reactions": [
+            "然后我还得假装自己没事，凭什么啊？",
+            "我脑子现在嗡嗡的，根本停不下来。",
+            "你说这种日子到底谁能扛得住？",
+        ],
+        "closers": ["我真快烦死了。", "真的很离谱。", "我现在一点余量都没有。"],
+    },
+    "暴躁直接型": {
+        "openers": ["又来。", "操。", "真他妈绝了。", "行，挺好。"],
+        "bridges": ["{event}", "结果是 {event}", "刚刚还在想别出事，转头就 {event}"],
+        "reactions": [
+            "我真想把今天直接砸了。",
+            "这破世界是不是故意跟我过不去？",
+            "谁现在来跟我讲大道理我都想翻脸。",
+        ],
+        "closers": ["我现在一肚子火。", "真的别逼我。", "我快压不住了。"],
+    },
+    "故作轻松型": {
+        "openers": ["没事。", "哈哈。", "挺好的。", "行啊。"],
+        "bridges": ["{event}", "又是 {event}", "生活这次挑的是 {event}"],
+        "reactions": [
+            "生活又精准地给我补了一刀。",
+            "反正今天本来也没打算顺利到哪去。",
+            "我笑着笑着就有点想把自己关机了。",
+        ],
+        "closers": ["真幽默。", "可太会挑时候了。", "我都快被逗麻了。"],
+    },
+    "理性压抑型": {
+        "openers": ["理论上讲，", "我知道这只是小事，", "按理说，", "客观上看，"],
+        "bridges": ["{event}", "现在发生的是 {event}", "只是 {event} 这种事"],
+        "reactions": [
+            "但我现在情绪已经快压不住了。",
+            "可我能感觉到自己在往下掉。",
+            "问题不大，问题是我快撑不动了。",
+        ],
+        "closers": ["我知道这样不体面。", "可我现在真的没有缓冲。", "我有点绷不住。"],
+    },
+}
+
+
+INTENSITY_MODIFIERS = {
+    "low": ["", "，但也就是烦", "，只是让我更想安静一会儿"],
+    "medium": ["", "，已经让我整个人开始发木了", "，感觉今天剩下的力气都被抽走了"],
+    "high": ["", "，我现在整个人都快炸了", "，像最后那根线也断了一样"],
+}
+
+
 def _score_seed(seed: TaggedSeed, requested_tags: Iterable[str], intensity: str) -> int:
     requested = set(requested_tags)
     score = len(seed.tags & requested) * 4
@@ -113,28 +177,113 @@ def _score_seed(seed: TaggedSeed, requested_tags: Iterable[str], intensity: str)
     return score
 
 
+def _recency_penalty(
+    seed_text: str,
+    state: DiversityState | None,
+    namespace: str,
+) -> float:
+    if state is None:
+        return 0.0
+    recent_hits = sum(1 for item in state.recent_items(namespace) if item == seed_text)
+    historical_hits = state.usage_count(namespace, seed_text)
+    return recent_hits * 2.5 + historical_hits * 0.35
+
+
+def _weighted_choice(items: list[tuple[object, float]], rng: Random) -> object:
+    total = sum(weight for _, weight in items)
+    threshold = rng.uniform(0, total)
+    cumulative = 0.0
+    for item, weight in items:
+        cumulative += weight
+        if cumulative >= threshold:
+            return item
+    return items[-1][0]
+
+
 def choose_seed(
     seeds: list[TaggedSeed],
     requested_tags: Iterable[str],
     intensity: str,
     rng: Random,
+    state: DiversityState | None = None,
+    namespace: str = "seed",
 ) -> TaggedSeed:
-    scored = sorted(
-        seeds,
-        key=lambda seed: (_score_seed(seed, requested_tags, intensity), seed.text),
-        reverse=True,
-    )
-    top_score = _score_seed(scored[0], requested_tags, intensity)
-    top_candidates = [seed for seed in scored if _score_seed(seed, requested_tags, intensity) == top_score]
-    return rng.choice(top_candidates)
+    weighted_candidates: list[tuple[TaggedSeed, float]] = []
+    for seed in seeds:
+        score = _score_seed(seed, requested_tags, intensity)
+        penalty = _recency_penalty(seed.text, state, namespace)
+        weight = max(0.2, 1.0 + score - penalty)
+        weighted_candidates.append((seed, weight))
+    selected = _weighted_choice(weighted_candidates, rng)
+    if state is not None:
+        state.remember(namespace, selected.text)
+    return selected
 
 
-def choose_style(style_pool: list[str], rng: Random) -> str:
+def choose_style(style_pool: list[str], rng: Random, state: DiversityState | None = None) -> str:
     candidates = style_pool or DEFAULT_STYLE_POOL
-    return rng.choice(candidates)
+    weighted_candidates: list[tuple[str, float]] = []
+    for style in candidates:
+        penalty = _recency_penalty(style, state, "style")
+        weight = max(0.2, 1.4 - penalty)
+        weighted_candidates.append((style, weight))
+    selected = _weighted_choice(weighted_candidates, rng)
+    if state is not None:
+        state.remember("style", selected)
+    return selected
 
 
-def render_style_message(style_tag: str, event: str, rng: Random) -> str:
-    templates = STYLE_TEMPLATES.get(style_tag, STYLE_TEMPLATES["理性压抑型"])
-    template = rng.choice(templates)
-    return template.format(event=event)
+def _pick_fragment(
+    options: list[str],
+    rng: Random,
+    state: DiversityState | None,
+    namespace: str,
+) -> str:
+    weighted_candidates: list[tuple[str, float]] = []
+    counter = Counter(state.recent_items(namespace)) if state is not None else Counter()
+    for option in options:
+        penalty = counter.get(option, 0) * 2.0
+        weight = max(0.2, 1.2 - penalty)
+        weighted_candidates.append((option, weight))
+    selected = _weighted_choice(weighted_candidates, rng)
+    if state is not None:
+        state.remember(namespace, selected)
+    return selected
+
+
+def _normalize_sentence(text: str) -> str:
+    cleaned = " ".join(text.split())
+    while "。。" in cleaned:
+        cleaned = cleaned.replace("。。", "。")
+    while "，，" in cleaned:
+        cleaned = cleaned.replace("，，", "，")
+    return cleaned.strip()
+
+
+def render_style_message(
+    style_tag: str,
+    event: str,
+    intensity: str,
+    rng: Random,
+    state: DiversityState | None = None,
+) -> str:
+    if rng.random() < 0.3:
+        templates = STYLE_TEMPLATES.get(style_tag, STYLE_TEMPLATES["理性压抑型"])
+        template = _pick_fragment(templates, rng, state, f"template:{style_tag}")
+        rendered = template.format(event=event)
+    else:
+        fragments = STYLE_FRAGMENTS.get(style_tag, STYLE_FRAGMENTS["理性压抑型"])
+        opener = _pick_fragment(fragments["openers"], rng, state, f"opener:{style_tag}")
+        bridge = _pick_fragment(fragments["bridges"], rng, state, f"bridge:{style_tag}").format(event=event)
+        reaction = _pick_fragment(fragments["reactions"], rng, state, f"reaction:{style_tag}")
+        closer = _pick_fragment(fragments["closers"], rng, state, f"closer:{style_tag}")
+        modifier = _pick_fragment(
+            INTENSITY_MODIFIERS.get(intensity, INTENSITY_MODIFIERS["medium"]),
+            rng,
+            state,
+            f"intensity:{intensity}",
+        )
+        rendered = f"{opener}{bridge}，{reaction}{modifier}"
+        if rng.random() < 0.7:
+            rendered = f"{rendered} {closer}"
+    return _normalize_sentence(rendered)

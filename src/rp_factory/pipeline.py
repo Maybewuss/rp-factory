@@ -6,7 +6,14 @@ from random import Random
 from typing import Any
 
 from .backends import MentorBackend, TargetModelBackend, TeacherBackend
-from .models import DatasetRecord, QualityReport, Scenario, TeacherResponse, dataclass_to_dict
+from .models import (
+    DatasetRecord,
+    DiversityState,
+    QualityReport,
+    Scenario,
+    TeacherResponse,
+    dataclass_to_dict,
+)
 from .io_utils import load_scenarios
 from .quality import run_quality_funnel
 from .target_filter import evaluate_teacher_gain
@@ -25,8 +32,13 @@ class PipelineA:
         self.mentor = mentor
         self.teacher = teacher
 
-    def run(self, scenario: Scenario, rng: Random) -> tuple[DatasetRecord | None, QualityReport]:
-        user = generate_user_bundle(scenario, rng)
+    def run(
+        self,
+        scenario: Scenario,
+        rng: Random,
+        diversity_state: DiversityState,
+    ) -> tuple[DatasetRecord | None, QualityReport]:
+        user = generate_user_bundle(scenario, rng, diversity_state)
         hint = self.mentor.build_hint(scenario, user)
         response = self.teacher.generate(scenario, user, hint=hint)
         mentor_scores = self.mentor.score_candidate(scenario, user, response)
@@ -82,8 +94,13 @@ class PipelineB:
         _, winner, winner_report = scored[0]
         return winner, winner_report
 
-    def run(self, scenario: Scenario, rng: Random) -> tuple[DatasetRecord | None, QualityReport]:
-        user = generate_user_bundle(scenario, rng)
+    def run(
+        self,
+        scenario: Scenario,
+        rng: Random,
+        diversity_state: DiversityState,
+    ) -> tuple[DatasetRecord | None, QualityReport]:
+        user = generate_user_bundle(scenario, rng, diversity_state)
         candidates = [
             self.teacher.generate_candidate(scenario, user, sample_idx=index)
             for index in range(self.best_of_n)
@@ -129,6 +146,7 @@ def build_dataset(
     target = TargetModelBackend(seed=seed + 17)
     pipeline_a = PipelineA(mentor=mentor, teacher=teacher)
     pipeline_b = PipelineB(mentor=mentor, teacher=teacher, best_of_n=best_of_n)
+    diversity_state = DiversityState()
 
     records: list[DatasetRecord] = []
     rejected: list[dict[str, Any]] = []
@@ -138,7 +156,7 @@ def build_dataset(
     for index, scenario in enumerate(scenarios):
         use_a = _should_use_pipeline_a(index, used_a, mix_ratio)
         pipeline = pipeline_a if use_a else pipeline_b
-        record, quality_report = pipeline.run(scenario, rng)
+        record, quality_report = pipeline.run(scenario, rng, diversity_state)
         if record is None:
             rejected.append(
                 {

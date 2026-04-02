@@ -54,6 +54,7 @@ class UserBundle:
     proxy_event: str
     style_tag: str
     user_message: str
+    generation_trace: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -88,3 +89,24 @@ def dataclass_to_dict(value: Any) -> Any:
     if hasattr(value, "__dataclass_fields__"):
         return asdict(value)
     return value
+
+
+@dataclass(slots=True)
+class DiversityState:
+    max_recent: int = 6
+    _recent_by_namespace: dict[str, list[str]] = field(default_factory=dict)
+    _counts_by_namespace: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def recent_items(self, namespace: str) -> list[str]:
+        return list(self._recent_by_namespace.get(namespace, []))
+
+    def usage_count(self, namespace: str, value: str) -> int:
+        return self._counts_by_namespace.get(namespace, {}).get(value, 0)
+
+    def remember(self, namespace: str, value: str) -> None:
+        history = self._recent_by_namespace.setdefault(namespace, [])
+        counts = self._counts_by_namespace.setdefault(namespace, {})
+        history.append(value)
+        counts[value] = counts.get(value, 0) + 1
+        if len(history) > self.max_recent:
+            history.pop(0)

@@ -7,7 +7,7 @@ from pathlib import Path
 from random import Random
 
 from src.rp_factory.io_utils import write_jsonl
-from src.rp_factory.models import DatasetRecord, Scenario, TeacherResponse
+from src.rp_factory.models import DatasetRecord, DiversityState, Scenario, TeacherResponse
 from src.rp_factory.pipeline import BuildResult, build_dataset
 from src.rp_factory.quality import extract_code_blocks, run_quality_funnel
 from src.rp_factory.user_generation import generate_user_bundle
@@ -42,6 +42,30 @@ class UserGenerationTests(unittest.TestCase):
         self.assertIn("你昨天说过你最喜欢吃甜食", bundle.user_message)
         self.assertTrue(bundle.deep_intent)
         self.assertTrue(bundle.proxy_event)
+
+    def test_generate_user_bundle_avoids_short_horizon_collisions(self) -> None:
+        scenario = Scenario.from_dict(
+            {
+                "name": "diversity-check",
+                "system_prompt": "你是一个嘴硬但会兜底的顾问。",
+                "persona_tags": ["嘴硬", "兜底"],
+                "intent_tags": ["高压", "执行力", "混乱"],
+                "intensity": "high",
+                "style_pool": ["暴躁直接型", "碎碎念型", "理性压抑型"],
+            }
+        )
+
+        rng = Random(19)
+        state = DiversityState()
+        bundles = [generate_user_bundle(scenario, rng, state) for _ in range(5)]
+
+        styles = {bundle.style_tag for bundle in bundles}
+        events = {bundle.proxy_event for bundle in bundles}
+        messages = {bundle.user_message for bundle in bundles}
+
+        self.assertGreaterEqual(len(styles), 2)
+        self.assertGreaterEqual(len(events), 2)
+        self.assertGreaterEqual(len(messages), 3)
 
 
 class QualityTests(unittest.TestCase):
@@ -133,6 +157,7 @@ class PipelineTests(unittest.TestCase):
         for record in result.records:
             self.assertIn("_meta", record.to_dict())
             self.assertIn("gain_report", record._meta)
+            self.assertIn("generation_trace", record._meta["user_bundle"])
 
     def test_write_jsonl(self) -> None:
         record = DatasetRecord(
