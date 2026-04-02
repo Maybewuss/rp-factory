@@ -5,11 +5,9 @@
   Step 2: 实体锚定 (Event Anchoring)
   Step 3: 加密生成 (Obfuscated Generation)
 
-v3.1.1 增强：
-  - Prompt 模板池：每次调用随机从多个语义等价变体中选取
-  - 种子去重追踪：同一批次不重复选取种子
-  - n-gram 多样性监控：检测输出模式塌缩
-  - 上下文感知续写：非首轮 User 发言基于对话历史生成
+v3.2 增强：
+  - LLM 驱动的种子动态扩充：n-gram 塌缩时自动调用 SeedExpander
+  - 可变种子池：运行时可注入新种子和风格
 """
 
 from __future__ import annotations
@@ -23,6 +21,7 @@ import yaml
 
 from rp_factory.config import FactoryConfig
 from rp_factory.diversity import DiversityGuard
+from rp_factory.generators import SeedExpander
 from rp_factory.llm_client import LLMClient, parse_json_response
 from rp_factory.models import IcebergLayers, Message, Role
 from rp_factory.prompt_pool import build_prompt_pools
@@ -41,20 +40,28 @@ def _load_seeds(filename: str) -> list[dict[str, Any]]:
 
 
 class IcebergEngine:
-    """冰山三步法 User 发言生成器。"""
+    """冰山三步法 User 发言生成器，支持 LLM 驱动的动态种子扩充。"""
 
     def __init__(self, config: FactoryConfig, llm: LLMClient) -> None:
         self.config = config
         self.llm = llm
+
         self._intent_seeds = _load_seeds("deep_intents.yaml")
         self._event_seeds = _load_seeds("proxy_events.yaml")
-        self._styles = config.user_agent.iceberg.diversity.user_styles
+        self._styles = list(config.user_agent.iceberg.diversity.user_styles)
         self._flat_events = self._flatten_events()
+
+        # 可变种子列表（运行时动态追加）
+        self._intent_texts: list[str] = [s.get("seed", "") for s in self._intent_seeds if s.get("seed")]
+        self._event_texts: list[str] = list(self._flat_events)
 
         self._pools = build_prompt_pools()
         self.diversity = DiversityGuard(
             collapse_threshold=config.user_agent.iceberg.diversity.ngram_collapse_threshold,
         )
+
+        self._expander = SeedExpander(llm)
+        self._register_auto_expand()
 
     def _flatten_events(self) -> list[str]:
         flat: list[str] = []
@@ -63,22 +70,75 @@ class IcebergEngine:
                 flat.append(ev)
         return flat
 
+    def _register_auto_expand(self) -> None:
+        """将种子扩充回调注册到 DiversityGuard。"""
+
+        async def _expand_intent(category: str) -> None:
+            new = await self._expander.expand_intents(
+                count=5, existing=self._intent_texts,
+            )
+            for s in new:
+                if s and s not in self._intent_texts:
+                    self._intent_texts.append(s)
+            logger.info("intent 池扩充至 %d 条", len(self._intent_texts))
+
+        async def _expand_event(category: str) -> None:
+            new = await self._expander.expand_events(
+                count=8, existing=self._event_texts,
+            )
+            for s in new:
+                if s and s not in self._event_texts:
+                    self._event_texts.append(s)
+            logger.info("event 池扩充至 %d 条", len(self._event_texts))
+
+        self.diversity.register_expand_callback("intent", _expand_intent)
+        self.diversity.register_expand_callback("event", _expand_event)
+
+    # ----- 种子 & 风格选取 -----
+
     def _pick_style(self) -> str:
         if self._styles and self.config.user_agent.iceberg.diversity.enable_style_injection:
             return random.choice(self._styles)
         return "自然随意型"
 
     def _pick_seed_intent(self) -> str | None:
-        if not self._intent_seeds:
+        if not self._intent_texts:
             return None
-        idx, item = self.diversity.seed_tracker.pick_unique("intent", self._intent_seeds)
-        return item.get("seed")
+        idx, text = self.diversity.seed_tracker.pick_unique("intent", self._intent_texts)
+        return text
 
     def _pick_seed_event(self) -> str | None:
-        if not self._flat_events:
+        if not self._event_texts:
             return None
-        idx, event = self.diversity.seed_tracker.pick_unique("event", self._flat_events)
+        idx, event = self.diversity.seed_tracker.pick_unique("event", self._event_texts)
         return event
+
+    def inject_intents(self, new_intents: list[str]) -> int:
+        """运行时注入新的深层动机种子。返回新增数量。"""
+        added = 0
+        for s in new_intents:
+            if s and s not in self._intent_texts:
+                self._intent_texts.append(s)
+                added += 1
+        return added
+
+    def inject_events(self, new_events: list[str]) -> int:
+        """运行时注入新的表面事件种子。返回新增数量。"""
+        added = 0
+        for s in new_events:
+            if s and s not in self._event_texts:
+                self._event_texts.append(s)
+                added += 1
+        return added
+
+    def inject_styles(self, new_styles: list[str]) -> int:
+        """运行时注入新的用户风格标签。返回新增数量。"""
+        added = 0
+        for s in new_styles:
+            if s and s not in self._styles:
+                self._styles.append(s)
+                added += 1
+        return added
 
     # ----- Step 1: 动机反推 -----
     async def step1_reverse_intent(self, system_prompt: str) -> str:
@@ -189,10 +249,7 @@ class IcebergEngine:
         system_prompt: str,
         conversation_history: list[Message] | None = None,
     ) -> IcebergLayers:
-        """执行冰山三步法或上下文续写，返回三层结构。
-
-        首轮对话执行完整三步法，后续轮次使用上下文感知续写。
-        """
+        """执行冰山三步法或上下文续写，返回三层结构。"""
         style = self._pick_style()
         has_history = (
             conversation_history

@@ -4,16 +4,20 @@
   - n-gram 多样性检测：当生成文本的 n-gram 重复率超过阈值时发出警告
   - 种子去重追踪：同一批次内避免重复使用同一个种子
   - 种子使用统计：追踪每个种子被选中的次数，为动态扩充提供依据
+  - LLM 驱动的自动扩充：塌缩时调用回调函数触发种子池扩充
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from collections import Counter, defaultdict
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
+
+ExpandCallback = Callable[[str], Awaitable[None]]
 
 
 class NGramMonitor:
@@ -114,7 +118,7 @@ class SeedTracker:
 
 
 class DiversityGuard:
-    """统一的多样性保障入口。"""
+    """统一的多样性保障入口。支持注册自动扩充回调。"""
 
     def __init__(
         self,
@@ -127,8 +131,15 @@ class DiversityGuard:
         self.output_monitor = NGramMonitor(ngram_n, window_size, collapse_threshold)
         self.seed_tracker = SeedTracker()
 
+        self._expand_callbacks: dict[str, ExpandCallback] = {}
+        self._expanding: set[str] = set()
+
+    def register_expand_callback(self, category: str, callback: ExpandCallback) -> None:
+        """注册某个类别塌缩时的自动扩充回调。"""
+        self._expand_callbacks[category] = callback
+
     def check_and_warn(self, category: str, text: str) -> float:
-        """添加文本到对应监控器，如果塌缩则发出警告。返回当前重复率。"""
+        """添加文本到对应监控器，如果塌缩则发出警告并触发自动扩充。"""
         monitor_map = {
             "intent": self.intent_monitor,
             "event": self.event_monitor,
@@ -136,15 +147,30 @@ class DiversityGuard:
         }
         monitor = monitor_map.get(category, self.output_monitor)
         ratio = monitor.add_text(text)
-        if monitor.is_collapsing():
+        if monitor.is_collapsing() and category not in self._expanding:
             logger.warning(
-                "多样性警告 [%s]: n-gram 重复率 %.2f 超过阈值 %.2f，建议扩充种子库",
+                "多样性警告 [%s]: n-gram 重复率 %.2f 超过阈值 %.2f，触发自动扩充",
                 category, ratio, monitor.threshold,
             )
+            if category in self._expand_callbacks:
+                self._expanding.add(category)
+                asyncio.ensure_future(self._run_expand(category))
         return ratio
+
+    async def _run_expand(self, category: str) -> None:
+        """执行自动扩充回调。"""
+        try:
+            callback = self._expand_callbacks[category]
+            await callback(category)
+            logger.info("自动扩充完成 [%s]", category)
+        except Exception as e:
+            logger.error("自动扩充失败 [%s]: %s", category, e)
+        finally:
+            self._expanding.discard(category)
 
     def reset(self) -> None:
         self.intent_monitor.reset()
         self.event_monitor.reset()
         self.output_monitor.reset()
         self.seed_tracker.reset_all()
+        self._expanding.clear()
