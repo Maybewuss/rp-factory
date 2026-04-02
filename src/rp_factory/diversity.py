@@ -1,23 +1,58 @@
-"""多样性监控与种子去重追踪。
-
-实现 inspire.md §1.3 的多样性保障：
-  - n-gram 多样性检测：当生成文本的 n-gram 重复率超过阈值时发出警告
-  - 种子去重追踪：同一批次内避免重复使用同一个种子
-  - 种子使用统计：追踪每个种子被选中的次数，为动态扩充提供依据
-  - LLM 驱动的自动扩充：塌缩时调用回调函数触发种子池扩充
-"""
+"""多样性工具：无重复池 + n-gram 监控。"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import random
-from collections import Counter, defaultdict
-from typing import Any, Awaitable, Callable
+from collections import Counter
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
-ExpandCallback = Callable[[str], Awaitable[None]]
+T = TypeVar("T")
+
+
+class Pool:
+    """通用无重复选取池。用完一轮自动重置。
+
+    统一替代旧的 PromptPool 和 SeedTracker。
+    """
+
+    def __init__(self, items: list[Any] | None = None) -> None:
+        self._items: list[Any] = list(items or [])
+        self._used: set[int] = set()
+
+    def pick(self) -> Any:
+        if not self._items:
+            raise ValueError("Pool is empty")
+        available = [i for i in range(len(self._items)) if i not in self._used]
+        if not available:
+            self._used.clear()
+            available = list(range(len(self._items)))
+        idx = random.choice(available)
+        self._used.add(idx)
+        return self._items[idx]
+
+    def add(self, item: Any) -> bool:
+        """添加新条目。如果已存在则跳过，返回是否实际添加。"""
+        if item in self._items:
+            return False
+        self._items.append(item)
+        return True
+
+    def extend(self, items: list[Any]) -> int:
+        """批量添加，返回实际新增数量。"""
+        return sum(1 for item in items if self.add(item))
+
+    def reset(self) -> None:
+        self._used.clear()
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    @property
+    def items(self) -> list[Any]:
+        return list(self._items)
 
 
 class NGramMonitor:
@@ -46,8 +81,7 @@ class NGramMonitor:
 
         if len(self._recent_texts) > self.window_size:
             old = self._recent_texts.pop(0)
-            old_ngrams = self._extract_ngrams(old)
-            for ng in old_ngrams:
+            for ng in self._extract_ngrams(old):
                 self._ngram_counts[ng] -= 1
                 if self._ngram_counts[ng] <= 0:
                     del self._ngram_counts[ng]
@@ -55,7 +89,6 @@ class NGramMonitor:
         return self.get_collapse_ratio()
 
     def get_collapse_ratio(self) -> float:
-        """计算当前窗口中出现超过 1 次的 n-gram 占比。"""
         if not self._ngram_counts:
             return 0.0
         total = sum(self._ngram_counts.values())
@@ -68,109 +101,3 @@ class NGramMonitor:
     def reset(self) -> None:
         self._recent_texts.clear()
         self._ngram_counts.clear()
-
-
-class SeedTracker:
-    """种子去重追踪器 — 同一批次内避免重复选取。"""
-
-    def __init__(self) -> None:
-        self._used: dict[str, set[int]] = defaultdict(set)
-        self._usage_counts: dict[str, Counter[int]] = defaultdict(Counter)
-
-    def pick_unique(self, pool_name: str, items: list[Any], max_retries: int = 10) -> tuple[int, Any]:
-        """从列表中选一个本批次尚未使用过的条目。
-
-        Returns:
-            (index, item) — 如果全部用过则重置追踪再选。
-        """
-        used = self._used[pool_name]
-        available = [i for i in range(len(items)) if i not in used]
-
-        if not available:
-            used.clear()
-            available = list(range(len(items)))
-
-        idx = random.choice(available)
-        used.add(idx)
-        self._usage_counts[pool_name][idx] += 1
-        return idx, items[idx]
-
-    def get_stats(self, pool_name: str) -> dict[str, Any]:
-        """返回指定种子池的使用统计。"""
-        counts = self._usage_counts.get(pool_name, Counter())
-        if not counts:
-            return {"total_picks": 0, "unique_used": 0, "most_used": None}
-        return {
-            "total_picks": sum(counts.values()),
-            "unique_used": len(counts),
-            "most_used": counts.most_common(3),
-            "least_used": counts.most_common()[-3:] if len(counts) >= 3 else counts.most_common(),
-        }
-
-    def reset_batch(self) -> None:
-        """新批次开始时重置使用记录（保留统计）。"""
-        for k in self._used:
-            self._used[k].clear()
-
-    def reset_all(self) -> None:
-        self._used.clear()
-        self._usage_counts.clear()
-
-
-class DiversityGuard:
-    """统一的多样性保障入口。支持注册自动扩充回调。"""
-
-    def __init__(
-        self,
-        ngram_n: int = 3,
-        window_size: int = 50,
-        collapse_threshold: float = 0.7,
-    ) -> None:
-        self.intent_monitor = NGramMonitor(ngram_n, window_size, collapse_threshold)
-        self.event_monitor = NGramMonitor(ngram_n, window_size, collapse_threshold)
-        self.output_monitor = NGramMonitor(ngram_n, window_size, collapse_threshold)
-        self.seed_tracker = SeedTracker()
-
-        self._expand_callbacks: dict[str, ExpandCallback] = {}
-        self._expanding: set[str] = set()
-
-    def register_expand_callback(self, category: str, callback: ExpandCallback) -> None:
-        """注册某个类别塌缩时的自动扩充回调。"""
-        self._expand_callbacks[category] = callback
-
-    def check_and_warn(self, category: str, text: str) -> float:
-        """添加文本到对应监控器，如果塌缩则发出警告并触发自动扩充。"""
-        monitor_map = {
-            "intent": self.intent_monitor,
-            "event": self.event_monitor,
-            "output": self.output_monitor,
-        }
-        monitor = monitor_map.get(category, self.output_monitor)
-        ratio = monitor.add_text(text)
-        if monitor.is_collapsing() and category not in self._expanding:
-            logger.warning(
-                "多样性警告 [%s]: n-gram 重复率 %.2f 超过阈值 %.2f，触发自动扩充",
-                category, ratio, monitor.threshold,
-            )
-            if category in self._expand_callbacks:
-                self._expanding.add(category)
-                asyncio.ensure_future(self._run_expand(category))
-        return ratio
-
-    async def _run_expand(self, category: str) -> None:
-        """执行自动扩充回调。"""
-        try:
-            callback = self._expand_callbacks[category]
-            await callback(category)
-            logger.info("自动扩充完成 [%s]", category)
-        except Exception as e:
-            logger.error("自动扩充失败 [%s]: %s", category, e)
-        finally:
-            self._expanding.discard(category)
-
-    def reset(self) -> None:
-        self.intent_monitor.reset()
-        self.event_monitor.reset()
-        self.output_monitor.reset()
-        self.seed_tracker.reset_all()
-        self._expanding.clear()

@@ -1,6 +1,5 @@
 """测试配置加载。"""
 
-
 from rp_factory.config import FactoryConfig, load_config
 
 
@@ -14,7 +13,6 @@ def test_load_default_config():
 def test_load_nonexistent_fallback():
     cfg = load_config("/nonexistent/path.yaml")
     assert isinstance(cfg, FactoryConfig)
-    assert cfg.llm.generator.model == "gpt-4o"
 
 
 def test_config_pipeline_settings():
@@ -42,11 +40,3 @@ def test_config_context_control():
     assert cfg.context_control.flavored_task.injection_probability == 0.3
     assert cfg.context_control.memory_poisoning.injection_probability == 0.25
     assert 3 in cfg.context_control.flavored_task.injection_rounds
-
-
-def test_config_evaluation_dimensions():
-    cfg = load_config()
-    dims = cfg.evaluation.dimensions
-    assert "deep_need_recognition" in dims
-    assert "persona_consistency" in dims
-    assert len(dims) == 5

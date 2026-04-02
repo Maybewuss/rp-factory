@@ -13,10 +13,6 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_CONFIG = _PROJECT_ROOT / "config" / "default.yaml"
 
 
-# ---------------------------------------------------------------------------
-# LLM 配置
-# ---------------------------------------------------------------------------
-
 class LLMEndpoint(BaseModel):
     model: str = "gpt-4o"
     base_url: str | None = None
@@ -35,10 +31,6 @@ class LLMConfig(BaseModel):
     mentor: LLMEndpoint = Field(default_factory=LLMEndpoint)
     target: LLMEndpoint = Field(default_factory=LLMEndpoint)
 
-
-# ---------------------------------------------------------------------------
-# 各模块配置
-# ---------------------------------------------------------------------------
 
 class DiversityConfig(BaseModel):
     enable_style_injection: bool = True
@@ -59,9 +51,6 @@ class UserAgentConfig(BaseModel):
 class FlavoredTaskConfig(BaseModel):
     injection_probability: float = 0.3
     injection_rounds: list[int] = Field(default_factory=lambda: [3, 4, 5])
-    task_types: list[str] = Field(default_factory=lambda: [
-        "translation", "code_writing", "summarization", "knowledge_qa",
-    ])
 
 
 class MemoryPoisoningConfig(BaseModel):
@@ -72,7 +61,6 @@ class MemoryPoisoningConfig(BaseModel):
 
 
 class CognitiveTranslationConfig(BaseModel):
-    default_route: str = "route_two"
     strict_sandbox_tag: str = "<strict_historical_sandbox>"
 
 
@@ -84,8 +72,6 @@ class ContextControlConfig(BaseModel):
 
 class PipelineAConfig(BaseModel):
     enabled: bool = True
-    perplexity_check: bool = True
-    perplexity_threshold: float = 1.5
 
 
 class PipelineBConfig(BaseModel):
@@ -112,7 +98,6 @@ class Level1QualityConfig(BaseModel):
 
 class Level2QualityConfig(BaseModel):
     enabled: bool = True
-    reasoning_depth_check: bool = True
 
 
 class QualityConfig(BaseModel):
@@ -122,10 +107,6 @@ class QualityConfig(BaseModel):
 
 class EvaluationConfig(BaseModel):
     sample_ratio: float = 0.1
-    dimensions: list[str] = Field(default_factory=lambda: [
-        "deep_need_recognition", "persona_consistency",
-        "flavored_task_completion", "fact_correction", "cognitive_translation",
-    ])
 
 
 class OutputConfig(BaseModel):
@@ -137,13 +118,8 @@ class OutputConfig(BaseModel):
 
 class PipelineRunConfig(BaseModel):
     conversation_turns: int = 6
-    batch_size: int = 10
     max_concurrent_conversations: int = 5
 
-
-# ---------------------------------------------------------------------------
-# 顶层配置
-# ---------------------------------------------------------------------------
 
 class FactoryConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -157,7 +133,6 @@ class FactoryConfig(BaseModel):
 
 
 def load_config(path: str | Path | None = None) -> FactoryConfig:
-    """从 YAML 加载配置，缺省值自动补齐。"""
     cfg_path = Path(path) if path else _DEFAULT_CONFIG
     if cfg_path.exists():
         with open(cfg_path, "r", encoding="utf-8") as f:

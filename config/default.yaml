@@ -1,7 +1,6 @@
-# RP 数据合成工厂配置 v3.1
+# RP 数据合成工厂配置 v3.2
 
 llm:
-  # 通用大模型（用于 User Agent 动机生成）
   generator:
     model: "gpt-4o"
     base_url: null
@@ -9,7 +8,6 @@ llm:
     temperature: 0.9
     max_tokens: 2048
 
-  # Teacher Model（用于 RP Agent 回复生成）
   teacher:
     model: "claude-3-5-sonnet-20241022"
     base_url: null
@@ -17,7 +15,6 @@ llm:
     temperature: 0.7
     max_tokens: 4096
 
-  # Mentor/Judge 模型（用于 Pipeline A 指导 & 质检评分）
   mentor:
     model: "gpt-4o"
     base_url: null
@@ -25,7 +22,6 @@ llm:
     temperature: 0.3
     max_tokens: 2048
 
-  # 目标模型（用于增益过滤）
   target:
     model: "qwen-max"
     base_url: null
@@ -34,7 +30,6 @@ llm:
     max_tokens: 2048
 
 user_agent:
-  # 冰山三步法参数
   iceberg:
     diversity:
       enable_style_injection: true
@@ -49,17 +44,10 @@ user_agent:
       ngram_collapse_threshold: 0.7
 
 context_control:
-  # 风味任务注入
   flavored_task:
     injection_probability: 0.3
     injection_rounds: [3, 4, 5]
-    task_types:
-      - "translation"
-      - "code_writing"
-      - "summarization"
-      - "knowledge_qa"
 
-  # 记忆投毒
   memory_poisoning:
     injection_probability: 0.25
     severity_distribution:
@@ -67,34 +55,23 @@ context_control:
       trivial: 0.4
       correct: 0.3
 
-  # 认知转译
   cognitive_translation:
-    default_route: "route_two"
     strict_sandbox_tag: "<strict_historical_sandbox>"
 
 rp_agent:
-  # Pipeline A: Mentor 场外指导
   pipeline_a:
     enabled: true
-    perplexity_check: true
-    perplexity_threshold: 1.5
-
-  # Pipeline B: Best-of-N 采样
   pipeline_b:
     enabled: true
     n_samples: 8
     temperature: 0.9
     max_concurrent: 4
-
-  # A/B 融合策略
   mix_ratio:
     pipeline_a: 0.5
     pipeline_b: 0.5
 
 quality:
-  # 第一级漏斗：人设 & 任务校验
   level1:
-    # AI 味黑名单正则
     persona_blacklist_patterns:
       - "作为AI"
       - "作为一个AI"
@@ -106,22 +83,12 @@ quality:
       - "作为语言模型"
       - "I'm an AI"
       - "As an AI"
-    # 代码块内人设穿透检测
     payload_lint_enabled: true
-
-  # 第二级漏斗：目标模型增益过滤
   level2:
     enabled: true
-    reasoning_depth_check: true
 
 evaluation:
   sample_ratio: 0.1
-  dimensions:
-    - "deep_need_recognition"
-    - "persona_consistency"
-    - "flavored_task_completion"
-    - "fact_correction"
-    - "cognitive_translation"
 
 output:
   format: "jsonl"
@@ -131,5 +98,4 @@ output:
 
 pipeline:
   conversation_turns: 6
-  batch_size: 10
   max_concurrent_conversations: 5

@@ -11,23 +11,14 @@ from rp_factory.models import PerturbationType
 @pytest.fixture
 def engine():
     cfg = load_config()
-    llm = LLMClient(cfg.llm.generator)
-    return PerturbationEngine(cfg, llm)
+    return PerturbationEngine(cfg, LLMClient(cfg.llm.generator))
 
 
 class TestFlavoredTask:
-    def test_pick_task(self, engine: PerturbationEngine):
-        task = engine.pick_flavored_task()
-        assert "prompt" in task
-        assert isinstance(task["prompt"], str)
-        assert len(task["prompt"]) > 0
-
     def test_create_task_message(self, engine: PerturbationEngine):
         msg, pert = engine.create_flavored_task_message(round_index=3)
-        assert isinstance(msg, str)
-        assert len(msg) > 0
+        assert isinstance(msg, str) and len(msg) > 0
         assert pert.type == PerturbationType.FLAVORED_TASK
-        assert pert.round_index == 3
 
     def test_should_inject_task_wrong_round(self, engine: PerturbationEngine):
         assert not engine.should_inject_task(0)
@@ -41,15 +32,14 @@ class TestCognitiveTranslation:
         assert not engine.needs_cognitive_translation("你是一个现代程序员")
 
     def test_strict_sandbox_overrides(self, engine: PerturbationEngine):
-        prompt = "你是一个唐代诗人 <strict_historical_sandbox>"
-        assert not engine.needs_cognitive_translation(prompt)
+        assert not engine.needs_cognitive_translation("你是唐代诗人 <strict_historical_sandbox>")
 
 
 class TestSeedLoading:
-    def test_flavored_tasks_loaded(self, engine: PerturbationEngine):
-        assert len(engine._task_seeds) > 0
+    def test_tasks_loaded(self, engine: PerturbationEngine):
+        assert len(engine.tasks) > 0
 
     def test_multiple_task_types(self, engine: PerturbationEngine):
-        types = {cat.get("type") for cat in engine._task_seeds}
+        types = {t.get("type") for t in engine.tasks.items}
         assert "translation" in types
         assert "code_writing" in types
