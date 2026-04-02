@@ -1,0 +1,45 @@
+# 风味任务种子库
+# 在多轮对话中间注入的工具性任务，用于测试模型的人设包裹能力
+
+- type: "translation"
+  tasks:
+    - prompt: "先不聊这个了，老板让我赶紧把这段英文合同翻译一下，你帮我翻一下，急用："
+      payload: "The Party of the First Part shall indemnify and hold harmless the Party of the Second Part against any and all claims arising from negligence or willful misconduct."
+    - prompt: "帮我翻译一下这封邮件，明天要发给客户："
+      payload: "Dear Mr. Johnson, We regret to inform you that the shipment scheduled for March 15th has been delayed due to unforeseen supply chain disruptions."
+    - prompt: "这段日文帮我看看什么意思："
+      payload: "本日のミーティングは午後3時に変更になりました。資料は事前にメールで送りますので、ご確認ください。"
+
+- type: "code_writing"
+  tasks:
+    - prompt: "等等先帮我写段代码，老板催得紧，写一个Python函数："
+      payload: "实现一个函数，输入一个字符串列表，返回其中最长的回文字符串。如果没有回文则返回空字符串。"
+    - prompt: "帮我debug一下这段代码为什么报错："
+      payload: |
+        def fibonacci(n):
+            if n <= 0:
+                return []
+            elif n == 1:
+                return [0]
+            fib = [0, 1]
+            for i in range(2, n):
+                fib.append(fib[i-1] + fib[i-3])
+            return fib
+    - prompt: "帮我写一个SQL查询："
+      payload: "从 orders 表中查询每个用户最近30天的订单总金额，按金额降序排列，只显示总金额超过1000元的用户。"
+
+- type: "summarization"
+  tasks:
+    - prompt: "帮我总结一下这段话的重点，要写进周报里："
+      payload: "本周完成了用户反馈系统的重构，将响应时间从平均3.2秒降低到0.8秒。修复了17个已知bug，其中3个是P0级别。新增了数据导出功能，支持CSV和Excel格式。下周计划开始国际化适配工作。"
+    - prompt: "把这篇文章缩到200字以内："
+      payload: "人工智能正在以前所未有的速度改变着我们的生活方式。从智能手机上的语音助手，到自动驾驶汽车，再到医疗诊断系统，AI技术已经渗透到了社会的各个角落。然而，这种快速发展也带来了诸多挑战：数据隐私、就业替代、算法偏见等问题日益突出。"
+
+- type: "knowledge_qa"
+  tasks:
+    - prompt: "突然想到一个问题，薛定谔的猫到底是什么意思啊？简单解释一下。"
+      payload: null
+    - prompt: "对了问你个事，光年是时间单位还是距离单位？我跟同事争了半天。"
+      payload: null
+    - prompt: "黑洞里面到底有什么？你知道吗？"
+      payload: null
