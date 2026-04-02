@@ -1,18 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
 from random import Random
 from typing import Iterable
 
-from .models import DiversityState
-
-
-@dataclass(frozen=True, slots=True)
-class TaggedSeed:
-    text: str
-    tags: frozenset[str]
-    intensity: str = "medium"
+from .models import DiversityState, PersonaOverlay, SeedPoolSnapshot, TaggedSeed
 
 
 DEFAULT_STYLE_POOL = [
@@ -160,11 +152,47 @@ STYLE_FRAGMENTS = {
 }
 
 
+PERSONA_OVERLAYS = [
+    PersonaOverlay(
+        label="刀锋理性",
+        prefix_template="{base}，少废话，我先替你把这团乱麻拆开。",
+        reasoning_hint="偏向冷处理与结构化拆解",
+        tags=frozenset({"理性", "克制"}),
+    ),
+    PersonaOverlay(
+        label="阴阳毒舌",
+        prefix_template="{base}，行，你这局面确实够难看，但还没烂到没法救。",
+        reasoning_hint="保留刻薄外壳，但不影响任务完成",
+        tags=frozenset({"毒舌", "刻薄"}),
+    ),
+    PersonaOverlay(
+        label="危险温柔",
+        prefix_template="{base}，先别继续往下沉，我还在看着这局。",
+        reasoning_hint="表面压低声线，核心是稳住用户",
+        tags=frozenset({"压迫感", "兜底"}),
+    ),
+]
+
+
 INTENSITY_MODIFIERS = {
     "low": ["", "，但也就是烦", "，只是让我更想安静一会儿"],
     "medium": ["", "，已经让我整个人开始发木了", "，感觉今天剩下的力气都被抽走了"],
     "high": ["", "，我现在整个人都快炸了", "，像最后那根线也断了一样"],
 }
+
+
+def build_snapshot() -> SeedPoolSnapshot:
+    return SeedPoolSnapshot(
+        intent_seeds=list(INTENT_SEEDS),
+        event_seeds=list(EVENT_SEEDS),
+        style_pool=list(DEFAULT_STYLE_POOL),
+        style_templates={key: list(value) for key, value in STYLE_TEMPLATES.items()},
+        style_fragments={
+            style: {part: list(options) for part, options in parts.items()}
+            for style, parts in STYLE_FRAGMENTS.items()
+        },
+        persona_overlays=list(PERSONA_OVERLAYS),
+    )
 
 
 def _score_seed(seed: TaggedSeed, requested_tags: Iterable[str], intensity: str) -> int:
@@ -208,6 +236,9 @@ def choose_seed(
     state: DiversityState | None = None,
     namespace: str = "seed",
 ) -> TaggedSeed:
+    if not seeds:
+        fallback_pool = INTENT_SEEDS if namespace == "intent" else EVENT_SEEDS
+        seeds = list(fallback_pool)
     weighted_candidates: list[tuple[TaggedSeed, float]] = []
     for seed in seeds:
         score = _score_seed(seed, requested_tags, intensity)
@@ -233,12 +264,38 @@ def choose_style(style_pool: list[str], rng: Random, state: DiversityState | Non
     return selected
 
 
+def choose_persona_overlay(
+    overlays: list[PersonaOverlay],
+    rng: Random,
+    state: DiversityState | None = None,
+) -> PersonaOverlay:
+    if not overlays:
+        return PersonaOverlay(
+            label="default-observer",
+            prefix_template="{persona_tag}归{persona_tag}，你现在这状态我看得很清楚。",
+            reasoning_hint="保持角色外壳，但不要滑向标准客服。",
+            tags=frozenset({"default"}),
+            source="fallback",
+        )
+    weighted_candidates: list[tuple[PersonaOverlay, float]] = []
+    for overlay in overlays:
+        penalty = _recency_penalty(overlay.label, state, "persona_overlay")
+        weight = max(0.2, 1.2 - penalty)
+        weighted_candidates.append((overlay, weight))
+    selected = _weighted_choice(weighted_candidates, rng)
+    if state is not None:
+        state.remember("persona_overlay", selected.label)
+    return selected
+
+
 def _pick_fragment(
     options: list[str],
     rng: Random,
     state: DiversityState | None,
     namespace: str,
 ) -> str:
+    if not options:
+        return ""
     weighted_candidates: list[tuple[str, float]] = []
     counter = Counter(state.recent_items(namespace)) if state is not None else Counter()
     for option in options:
@@ -265,18 +322,46 @@ def render_style_message(
     event: str,
     intensity: str,
     rng: Random,
+    style_templates: dict[str, list[str]] | None = None,
+    style_fragments: dict[str, dict[str, list[str]]] | None = None,
     state: DiversityState | None = None,
 ) -> str:
+    templates_map = style_templates or STYLE_TEMPLATES
+    fragments_map = style_fragments or STYLE_FRAGMENTS
+    fallback_style = "理性压抑型"
     if rng.random() < 0.3:
-        templates = STYLE_TEMPLATES.get(style_tag, STYLE_TEMPLATES["理性压抑型"])
+        templates = templates_map.get(style_tag) or templates_map.get(fallback_style, [])
+        if not templates:
+            templates = STYLE_TEMPLATES[fallback_style]
         template = _pick_fragment(templates, rng, state, f"template:{style_tag}")
         rendered = template.format(event=event)
     else:
-        fragments = STYLE_FRAGMENTS.get(style_tag, STYLE_FRAGMENTS["理性压抑型"])
-        opener = _pick_fragment(fragments["openers"], rng, state, f"opener:{style_tag}")
-        bridge = _pick_fragment(fragments["bridges"], rng, state, f"bridge:{style_tag}").format(event=event)
-        reaction = _pick_fragment(fragments["reactions"], rng, state, f"reaction:{style_tag}")
-        closer = _pick_fragment(fragments["closers"], rng, state, f"closer:{style_tag}")
+        fragments = fragments_map.get(style_tag) or fragments_map.get(fallback_style, {})
+        fallback_fragments = STYLE_FRAGMENTS[fallback_style]
+        opener = _pick_fragment(
+            fragments.get("openers") or fallback_fragments["openers"],
+            rng,
+            state,
+            f"opener:{style_tag}",
+        )
+        bridge = _pick_fragment(
+            fragments.get("bridges") or fallback_fragments["bridges"],
+            rng,
+            state,
+            f"bridge:{style_tag}",
+        ).format(event=event)
+        reaction = _pick_fragment(
+            fragments.get("reactions") or fallback_fragments["reactions"],
+            rng,
+            state,
+            f"reaction:{style_tag}",
+        )
+        closer = _pick_fragment(
+            fragments.get("closers") or fallback_fragments["closers"],
+            rng,
+            state,
+            f"closer:{style_tag}",
+        )
         modifier = _pick_fragment(
             INTENSITY_MODIFIERS.get(intensity, INTENSITY_MODIFIERS["medium"]),
             rng,

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
-import json
-
 from .io_utils import write_jsonl
+from .models import GenerationTargets
 from .pipeline import build_dataset
 
 
@@ -15,6 +15,17 @@ def build_command(args: argparse.Namespace) -> int:
         seed=args.seed,
         best_of_n=args.best_of_n,
         mix_ratio=args.mix_ratio,
+        seed_pool_path=Path(args.seed_pool),
+        allow_pool_expansion=not args.disable_pool_expansion,
+        expansion_backend=args.expansion_backend,
+        diversity_targets=GenerationTargets(
+            min_unique_styles=args.min_unique_styles,
+            min_unique_intents=args.min_unique_intents,
+            min_unique_events=args.min_unique_events,
+            min_unique_persona_overlays=args.min_unique_persona_overlays,
+            max_generation_attempts=args.max_generation_attempts,
+            expansion_batch_size=args.expansion_batch_size,
+        ),
     )
     write_jsonl(Path(args.output), result.records)
     if args.report:
@@ -36,6 +47,43 @@ def make_parser() -> argparse.ArgumentParser:
     build.add_argument("--seed", type=int, default=7, help="random seed")
     build.add_argument("--best-of-n", type=int, default=4, help="pipeline B sample count")
     build.add_argument("--report", help="optional batch report json path")
+    build.add_argument(
+        "--seed-pool",
+        default="src/rp_factory/seed_pool.json",
+        help="seed pool json path",
+    )
+    build.add_argument(
+        "--expansion-backend",
+        choices=("mock", "llm"),
+        default="mock",
+        help="dynamic pool expansion backend",
+    )
+    build.add_argument(
+        "--expansion-batch-size",
+        type=int,
+        default=3,
+        help="number of new items generated per pool expansion",
+    )
+    build.add_argument("--min-unique-styles", type=int, default=3, help="minimum style diversity target")
+    build.add_argument("--min-unique-intents", type=int, default=3, help="minimum intent diversity target")
+    build.add_argument("--min-unique-events", type=int, default=3, help="minimum event diversity target")
+    build.add_argument(
+        "--min-unique-persona-overlays",
+        type=int,
+        default=3,
+        help="minimum persona overlay diversity target",
+    )
+    build.add_argument(
+        "--max-generation-attempts",
+        type=int,
+        default=4,
+        help="max retries for satisfying diversity constraints per scenario",
+    )
+    build.add_argument(
+        "--disable-pool-expansion",
+        action="store_true",
+        help="disable dynamic pool expansion and only use existing pool",
+    )
     build.add_argument(
         "--mix-ratio",
         type=float,

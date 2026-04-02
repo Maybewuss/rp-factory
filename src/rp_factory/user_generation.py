@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from random import Random
 
-from .models import DiversityState, Scenario, UserBundle
+from .models import DiversityState, Scenario, SeedPoolSnapshot, UserBundle
 from .seeds import (
-    EVENT_SEEDS,
-    INTENT_SEEDS,
+    build_snapshot,
     choose_seed,
+    choose_persona_overlay,
     choose_style,
     render_style_message,
 )
@@ -35,10 +35,14 @@ def _build_poisoning_suffix(scenario: Scenario) -> str:
 def generate_user_bundle(
     scenario: Scenario,
     rng: Random,
+    seed_pool: SeedPoolSnapshot,
     diversity_state: DiversityState | None = None,
 ) -> UserBundle:
+    if not seed_pool.intent_seeds or not seed_pool.event_seeds:
+        seed_pool = build_snapshot()
+
     intent_seed = choose_seed(
-        INTENT_SEEDS,
+        seed_pool.intent_seeds,
         scenario.intent_tags,
         scenario.intensity,
         rng,
@@ -46,7 +50,7 @@ def generate_user_bundle(
         namespace="intent",
     )
     event_seed = choose_seed(
-        EVENT_SEEDS,
+        seed_pool.event_seeds,
         scenario.intent_tags,
         scenario.intensity,
         rng,
@@ -54,7 +58,12 @@ def generate_user_bundle(
         namespace="event",
     )
     style_tag = choose_style(
-        scenario.style_pool,
+        scenario.style_pool or seed_pool.style_pool,
+        rng,
+        state=diversity_state,
+    )
+    persona_overlay = choose_persona_overlay(
+        seed_pool.persona_overlays,
         rng,
         state=diversity_state,
     )
@@ -63,6 +72,8 @@ def generate_user_bundle(
         event_seed.text,
         scenario.intensity,
         rng,
+        style_templates=seed_pool.style_templates,
+        style_fragments=seed_pool.style_fragments,
         state=diversity_state,
     )
     user_message += _build_flavored_suffix(scenario)
@@ -78,5 +89,7 @@ def generate_user_bundle(
             "intent_source": intent_seed.text,
             "event_source": event_seed.text,
             "style_tag": style_tag,
+            "persona_overlay": persona_overlay.label,
+            "persona_overlay_source": persona_overlay.source,
         },
     )

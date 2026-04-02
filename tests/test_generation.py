@@ -7,10 +7,19 @@ from pathlib import Path
 from random import Random
 
 from src.rp_factory.io_utils import write_jsonl
-from src.rp_factory.models import DatasetRecord, DiversityState, Scenario, TeacherResponse
+from src.rp_factory.models import (
+    DatasetRecord,
+    DiversityState,
+    GenerationTargets,
+    PersonaOverlay,
+    Scenario,
+    SeedPoolSnapshot,
+    TeacherResponse,
+)
 from src.rp_factory.pipeline import BuildResult, build_dataset
 from src.rp_factory.quality import extract_code_blocks, run_quality_funnel
 from src.rp_factory.user_generation import generate_user_bundle
+from src.rp_factory.seeds import build_snapshot
 
 
 class UserGenerationTests(unittest.TestCase):
@@ -37,7 +46,7 @@ class UserGenerationTests(unittest.TestCase):
             }
         )
 
-        bundle = generate_user_bundle(scenario, Random(3))
+        bundle = generate_user_bundle(scenario, Random(3), build_snapshot())
         self.assertIn("Python", bundle.user_message)
         self.assertIn("你昨天说过你最喜欢吃甜食", bundle.user_message)
         self.assertTrue(bundle.deep_intent)
@@ -57,7 +66,8 @@ class UserGenerationTests(unittest.TestCase):
 
         rng = Random(19)
         state = DiversityState()
-        bundles = [generate_user_bundle(scenario, rng, state) for _ in range(5)]
+        snapshot = build_snapshot()
+        bundles = [generate_user_bundle(scenario, rng, snapshot, state) for _ in range(5)]
 
         styles = {bundle.style_tag for bundle in bundles}
         events = {bundle.proxy_event for bundle in bundles}
@@ -66,6 +76,45 @@ class UserGenerationTests(unittest.TestCase):
         self.assertGreaterEqual(len(styles), 2)
         self.assertGreaterEqual(len(events), 2)
         self.assertGreaterEqual(len(messages), 3)
+
+    def test_generate_user_bundle_uses_dynamic_pool_snapshot(self) -> None:
+        scenario = Scenario.from_dict(
+            {
+                "name": "snapshot-check",
+                "system_prompt": "你是一个敏锐又危险的顾问。",
+                "persona_tags": ["敏锐", "危险"],
+                "intent_tags": ["求稳", "依附"],
+                "intensity": "medium",
+                "style_pool": ["新锐冷感型"],
+            }
+        )
+        snapshot = SeedPoolSnapshot(
+            intent_seeds=[],
+            event_seeds=[],
+            style_pool=["新锐冷感型"],
+            style_templates={"新锐冷感型": ["{event}。这事真够难看的。"]},
+            style_fragments={
+                "新锐冷感型": {
+                    "openers": ["别笑。"],
+                    "bridges": ["{event}"],
+                    "reactions": ["现在这局面已经够糟了。"],
+                    "closers": ["你最好认真一点。"],
+                }
+            },
+            persona_overlays=[
+                PersonaOverlay(
+                    label="新锐冷感型-玻璃刀",
+                    prefix_template="你像一把玻璃刀，冷静、锋利，而且懒得安慰人。",
+                    reasoning_hint="优先暴露出冷感与精确切割问题的倾向。",
+                    tags=frozenset({"冷感", "锋利"}),
+                )
+            ],
+        )
+
+        bundle = generate_user_bundle(scenario, Random(7), snapshot, DiversityState())
+        self.assertEqual(bundle.style_tag, "新锐冷感型")
+        self.assertIn("新锐冷感型", bundle.generation_trace["style_tag"])
+        self.assertIn("persona_overlay", bundle.generation_trace)
 
 
 class QualityTests(unittest.TestCase):
@@ -148,11 +197,24 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             scenario_path = Path(tmpdir) / "scenarios.json"
             scenario_path.write_text(json.dumps(scenarios, ensure_ascii=False), encoding="utf-8")
-            result = build_dataset(scenario_path, seed=11, best_of_n=3, mix_ratio=0.5)
+            result = build_dataset(
+                scenario_path,
+                seed=11,
+                best_of_n=3,
+                mix_ratio=0.5,
+                diversity_targets=GenerationTargets(
+                    min_unique_styles=2,
+                    min_unique_intents=2,
+                    min_unique_events=2,
+                    min_unique_persona_overlays=2,
+                    expansion_batch_size=2,
+                ),
+            )
 
         self.assertIsInstance(result, BuildResult)
         self.assertGreaterEqual(result.batch_report["input_scenarios"], 2)
         self.assertIn("diversity", result.batch_report)
+        self.assertIn("pool_stats", result.batch_report)
         self.assertGreaterEqual(len(result.records), 1)
         for record in result.records:
             self.assertIn("_meta", record.to_dict())

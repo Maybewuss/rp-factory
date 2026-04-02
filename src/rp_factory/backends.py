@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import textwrap
 from dataclasses import dataclass
+from typing import Protocol
 
 from .models import Scenario, TeacherResponse, UserBundle
 
@@ -194,3 +195,6 @@ class TargetModelBackend:
             content_parts.append("如果我记错了，也欢迎你继续补充上下文。")
         reasoning = "表层回应：先安抚用户情绪。 任务处理：如果有显式任务则直接完成。"
         return TeacherResponse(reasoning_content=reasoning, content="\n\n".join(content_parts), scores={})
+
+class LlmExpansionGenerator(Protocol):
+    def __call__(self, prompt: str) -> str: ...

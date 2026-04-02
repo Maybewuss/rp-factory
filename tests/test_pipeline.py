@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.rp_factory.models import GenerationTargets
 from src.rp_factory.pipeline import build_dataset
 
 
@@ -41,12 +42,27 @@ class PipelineTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "scenarios.json"
+            pool_path = Path(tmpdir) / "seed_pool.json"
             input_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-            result = build_dataset(input_path=input_path, seed=11, best_of_n=3, mix_ratio=0.5)
+            result = build_dataset(
+                input_path=input_path,
+                seed=11,
+                best_of_n=3,
+                mix_ratio=0.5,
+                seed_pool_path=pool_path,
+                diversity_targets=GenerationTargets(
+                    min_unique_styles=2,
+                    min_unique_intents=2,
+                    min_unique_events=2,
+                    min_unique_persona_overlays=2,
+                    expansion_batch_size=2,
+                ),
+            )
 
         self.assertGreaterEqual(len(result.records), 1)
         self.assertIn("diversity", result.batch_report)
         self.assertIn("pipeline_usage", result.batch_report)
+        self.assertIn("pool_stats", result.batch_report)
         for record in result.records:
             self.assertIn("gain_report", record._meta)
 

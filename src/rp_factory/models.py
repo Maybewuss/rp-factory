@@ -110,3 +110,40 @@ class DiversityState:
         counts[value] = counts.get(value, 0) + 1
         if len(history) > self.max_recent:
             history.pop(0)
+
+
+@dataclass(slots=True)
+class TaggedSeed:
+    text: str
+    tags: frozenset[str]
+    intensity: str = "medium"
+    source: str = "default"
+
+
+@dataclass(slots=True)
+class PersonaOverlay:
+    label: str
+    prefix_template: str
+    reasoning_hint: str
+    tags: frozenset[str]
+    source: str = "default"
+
+
+@dataclass(slots=True)
+class SeedPoolSnapshot:
+    intent_seeds: list[TaggedSeed]
+    event_seeds: list[TaggedSeed]
+    style_pool: list[str]
+    style_templates: dict[str, list[str]]
+    style_fragments: dict[str, dict[str, list[str]]]
+    persona_overlays: list[PersonaOverlay]
+
+
+@dataclass(slots=True)
+class GenerationTargets:
+    min_unique_styles: int = 3
+    min_unique_intents: int = 3
+    min_unique_events: int = 3
+    min_unique_persona_overlays: int = 3
+    max_generation_attempts: int = 4
+    expansion_batch_size: int = 3
