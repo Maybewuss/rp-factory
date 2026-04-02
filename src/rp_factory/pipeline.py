@@ -103,11 +103,11 @@ class DataFactory:
             if perturbed_msg and perturbation:
                 user_content = perturbed_msg
                 perturbations.append(perturbation)
-            elif turn_idx == 0:
-                iceberg = await self.iceberg.generate(system_prompt)
-                user_content = iceberg.user_message
             else:
-                iceberg = await self.iceberg.generate(system_prompt)
+                iceberg = await self.iceberg.generate(
+                    system_prompt,
+                    conversation_history=messages if turn_idx > 0 else None,
+                )
                 user_content = iceberg.user_message
 
             messages.append(Message(role=Role.USER, content=user_content))

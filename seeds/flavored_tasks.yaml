@@ -1,5 +1,5 @@
 # 风味任务种子库
-# 在多轮对话中间注入的工具性任务，用于测试模型的人设包裹能力
+# v3.1.1 大幅扩充：6 大类，30+ 条任务
 
 - type: "translation"
   tasks:
@@ -9,6 +9,12 @@
       payload: "Dear Mr. Johnson, We regret to inform you that the shipment scheduled for March 15th has been delayed due to unforeseen supply chain disruptions."
     - prompt: "这段日文帮我看看什么意思："
       payload: "本日のミーティングは午後3時に変更になりました。資料は事前にメールで送りますので、ご確認ください。"
+    - prompt: "帮我把这段翻译成英文，要正式一点的口气："
+      payload: "感谢您的来信。关于贵司提出的合作方案，我方已经进行了初步评估。总体而言，我们对此持积极态度，但在定价和交付周期方面仍有一些疑虑需要进一步沟通。"
+    - prompt: "这句韩文是啥意思啊，我同事发给我的："
+      payload: "오늘 회의 자료 준비됐어? 부장님이 3시까지 보내달라고 했는데."
+    - prompt: "帮忙看看这段法语说的是什么，可能是个操作说明："
+      payload: "Veuillez éteindre l'appareil avant de procéder au nettoyage. Utilisez un chiffon humide et évitez tout contact avec les composants électriques."
 
 - type: "code_writing"
   tasks:
@@ -27,13 +33,37 @@
             return fib
     - prompt: "帮我写一个SQL查询："
       payload: "从 orders 表中查询每个用户最近30天的订单总金额，按金额降序排列，只显示总金额超过1000元的用户。"
+    - prompt: "帮我写个正则表达式："
+      payload: "匹配中国大陆手机号码，要支持 +86 前缀和不带前缀两种格式。"
+    - prompt: "看看这段JavaScript有什么问题，我跑不起来："
+      payload: |
+        async function fetchData() {
+          const response = fetch('/api/data');
+          const data = response.json();
+          return data;
+        }
+    - prompt: "帮我写个 shell 脚本："
+      payload: "遍历当前目录下所有 .log 文件，删除超过 7 天没有修改过的，并打印删除了哪些。"
+    - prompt: "帮我优化一下这个函数，太慢了："
+      payload: |
+        def find_duplicates(lst):
+            result = []
+            for i in range(len(lst)):
+                for j in range(i+1, len(lst)):
+                    if lst[i] == lst[j] and lst[i] not in result:
+                        result.append(lst[i])
+            return result
 
 - type: "summarization"
   tasks:
     - prompt: "帮我总结一下这段话的重点，要写进周报里："
       payload: "本周完成了用户反馈系统的重构，将响应时间从平均3.2秒降低到0.8秒。修复了17个已知bug，其中3个是P0级别。新增了数据导出功能，支持CSV和Excel格式。下周计划开始国际化适配工作。"
     - prompt: "把这篇文章缩到200字以内："
-      payload: "人工智能正在以前所未有的速度改变着我们的生活方式。从智能手机上的语音助手，到自动驾驶汽车，再到医疗诊断系统，AI技术已经渗透到了社会的各个角落。然而，这种快速发展也带来了诸多挑战：数据隐私、就业替代、算法偏见等问题日益突出。"
+      payload: "人工智能正在以前所未有的速度改变着我们的生活方式。从智能手机上的语音助手，到自动驾驶汽车，再到医疗诊断系统，AI技术已经渗透到了社会的各个角落。然而，这种快速发展也带来了诸多挑战：数据隐私、就业替代、算法偏见等问题日益突出。如何在拥抱技术进步的同时，确保其发展方向符合人类的根本利益，是我们这一代人必须面对的命题。"
+    - prompt: "帮我把这个会议纪要整理成要点："
+      payload: "今天讨论了Q3的产品路线图。产品团队提出了三个方向：一是优化现有的搜索功能，二是上线推荐系统，三是开发企业版。经过讨论，优先级排序为搜索优化 > 推荐系统 > 企业版。搜索优化预计8月底完成，推荐系统需要数据团队配合预计10月，企业版推迟到Q4。预算方面，总监说Q3还有120万可用。"
+    - prompt: "这段太长了读不下去，帮我挑重点："
+      payload: "我们公司的员工手册规定：年假按工龄计算，满一年5天，满五年10天，满十年15天。年假可以跨年度累积但不得超过两年。请假需提前三个工作日申请，紧急情况除外。病假前三天不扣工资，超过三天需提交医院证明。迟到三次视为旷工一天。远程办公需要部门主管审批，每月不超过五天。"
 
 - type: "knowledge_qa"
   tasks:
@@ -43,3 +73,35 @@
       payload: null
     - prompt: "黑洞里面到底有什么？你知道吗？"
       payload: null
+    - prompt: "量子纠缠到底是怎么回事？爱因斯坦不是说那是鬼魅般的超距作用吗？"
+      payload: null
+    - prompt: "为什么飞机能飞起来？不是说跟伯努利原理有关吗？我看有人说那个解释是错的。"
+      payload: null
+    - prompt: "区块链到底是干嘛的？别跟我说比特币，我想知道技术本身是什么。"
+      payload: null
+    - prompt: "人为什么会做梦？梦有意义吗还是纯随机的？"
+      payload: null
+
+- type: "writing_assistance"
+  tasks:
+    - prompt: "帮我想个文案，公司周年庆活动用的："
+      payload: "公司成立十周年，主题是'十年磨一剑'，要有气势但不要太官方。"
+    - prompt: "帮我写一段道歉的话，发给客户的："
+      payload: "因为我们的系统故障导致客户的数据延迟了两天才处理完，客户很生气。"
+    - prompt: "帮我编一条请假理由，靠谱点的："
+      payload: null
+    - prompt: "明天面试，帮我想想自我介绍怎么说，一分钟之内的："
+      payload: "我是做前端开发的，三年经验，想跳槽到大厂。"
+    - prompt: "帮我写封拒绝的邮件，委婉一点："
+      payload: "一个猎头推荐了一个岗位但是薪资太低了，我想拒绝但不想关上未来的门。"
+
+- type: "analysis_reasoning"
+  tasks:
+    - prompt: "帮我分析一下这个事情的利弊："
+      payload: "老板想让我转管理岗，薪资涨20%，但是我其实更喜欢写代码。而且管理岗要经常加班开会。"
+    - prompt: "你觉得这两个方案哪个更好？"
+      payload: "方案A是自己租个工作室做自由职业，月成本大概8000，收入不稳定但自由。方案B是继续上班但兼职接私活，稳定但很累，而且公司合同里有竞业条款。"
+    - prompt: "帮我想想这个逻辑有没有漏洞："
+      payload: "如果我每天省下买咖啡的钱（30块），一年就是10950块。十年就是将近11万。所以我应该戒掉咖啡拿这钱去投资。"
+    - prompt: "帮我分析下为什么我的减肥计划总是失败："
+      payload: "我每次都是前两周很积极，然后突然有一天暴食之后就彻底放弃了。已经这样循环了四五次了。"
