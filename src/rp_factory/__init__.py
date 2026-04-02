@@ -1,5 +1,5 @@
 """rp_factory package."""
 
-from .engine import DatasetBuilder
+from .pipeline import BuildResult, build_dataset
 
-__all__ = ["DatasetBuilder"]
+__all__ = ["BuildResult", "build_dataset"]
