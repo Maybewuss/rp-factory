@@ -11,6 +11,7 @@ from .io_utils import load_scenarios
 from .models import (
     DatasetRecord,
     DiversityState,
+    GenerationPolicy,
     GenerationTargets,
     QualityReport,
     Scenario,
@@ -142,6 +143,15 @@ def _expand_backend(expansion_backend: str, seed: int):
     return RuleBasedExpansionBackend()
 
 
+def _needs_expansion(snapshot: SeedPoolSnapshot, targets: GenerationTargets) -> bool:
+    return (
+        len(snapshot.intent_seeds) < targets.min_unique_intents
+        or len(snapshot.event_seeds) < targets.min_unique_events
+        or len(snapshot.style_pool) < targets.min_unique_styles
+        or len(snapshot.persona_overlays) < targets.min_unique_persona_overlays
+    )
+
+
 def build_dataset(
     input_path: str | Path,
     seed: int = 7,
@@ -151,8 +161,8 @@ def build_dataset(
     seed_pool_path: str | Path | None = None,
     allow_pool_expansion: bool = True,
     expansion_backend: str = "mock",
-    expansion_batch_size: int = 3,
     diversity_targets: GenerationTargets | None = None,
+    generation_policy: GenerationPolicy | None = None,
 ) -> BuildResult:
     scenarios = load_scenarios(input_path)
     rng = Random(seed)
@@ -163,6 +173,7 @@ def build_dataset(
     pipeline_b = PipelineB(mentor=mentor, teacher=teacher, best_of_n=best_of_n)
     diversity_state = DiversityState()
     targets = diversity_targets or GenerationTargets()
+    policy = generation_policy or GenerationPolicy()
     manager = PoolManager(
         pool_path=seed_pool_path or "src/rp_factory/seed_pool.json",
         expansion_backend=_expand_backend(expansion_backend, seed),
@@ -175,20 +186,20 @@ def build_dataset(
     used_b = 0
 
     for index, scenario in enumerate(scenarios):
-        if allow_pool_expansion:
-            effective_targets = GenerationTargets(
-                min_unique_styles=max(targets.min_unique_styles, expansion_batch_size),
-                min_unique_intents=max(targets.min_unique_intents, expansion_batch_size),
-                min_unique_events=max(targets.min_unique_events, expansion_batch_size),
-                min_unique_persona_overlays=max(targets.min_unique_persona_overlays, expansion_batch_size),
-                max_generation_attempts=targets.max_generation_attempts,
-                expansion_batch_size=targets.expansion_batch_size,
-            )
+        if allow_pool_expansion and _needs_expansion(pool_snapshot, targets):
             pool_snapshot = manager.expand_pool(
                 scenario=scenario,
                 state=diversity_state,
                 snapshot=pool_snapshot,
-                targets=effective_targets,
+                targets=GenerationTargets(
+                    min_unique_styles=max(targets.min_unique_styles, policy.expansion_batch_size),
+                    min_unique_intents=max(targets.min_unique_intents, policy.expansion_batch_size),
+                    min_unique_events=max(targets.min_unique_events, policy.expansion_batch_size),
+                    min_unique_persona_overlays=max(
+                        targets.min_unique_persona_overlays,
+                        policy.expansion_batch_size,
+                    ),
+                ),
                 rng=rng,
             )
 
@@ -249,6 +260,7 @@ def build_dataset(
             "persona_overlays": len(pool_snapshot.persona_overlays),
         },
         "targets": dataclass_to_dict(targets),
+        "policy": dataclass_to_dict(policy),
         "rejections": rejected,
     }
     return BuildResult(records=records, batch_report=batch_report)

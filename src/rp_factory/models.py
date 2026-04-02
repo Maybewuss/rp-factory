@@ -145,5 +145,9 @@ class GenerationTargets:
     min_unique_intents: int = 3
     min_unique_events: int = 3
     min_unique_persona_overlays: int = 3
-    max_generation_attempts: int = 4
+
+
+@dataclass(slots=True)
+class GenerationPolicy:
     expansion_batch_size: int = 3
+    max_generation_attempts: int = 4

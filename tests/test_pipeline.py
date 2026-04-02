@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.rp_factory.models import GenerationTargets
+from src.rp_factory.models import GenerationPolicy, GenerationTargets
 from src.rp_factory.pipeline import build_dataset
 
 
@@ -55,8 +55,8 @@ class PipelineTests(unittest.TestCase):
                     min_unique_intents=2,
                     min_unique_events=2,
                     min_unique_persona_overlays=2,
-                    expansion_batch_size=2,
                 ),
+                generation_policy=GenerationPolicy(expansion_batch_size=2),
             )
 
         self.assertGreaterEqual(len(result.records), 1)

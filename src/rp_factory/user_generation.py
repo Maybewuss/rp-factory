@@ -74,6 +74,7 @@ def generate_user_bundle(
         rng,
         style_templates=seed_pool.style_templates,
         style_fragments=seed_pool.style_fragments,
+        persona_overlay=persona_overlay,
         state=diversity_state,
     )
     user_message += _build_flavored_suffix(scenario)

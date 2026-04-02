@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .io_utils import write_jsonl
-from .models import GenerationTargets
+from .models import GenerationPolicy, GenerationTargets
 from .pipeline import build_dataset
 
 
@@ -23,8 +23,10 @@ def build_command(args: argparse.Namespace) -> int:
             min_unique_intents=args.min_unique_intents,
             min_unique_events=args.min_unique_events,
             min_unique_persona_overlays=args.min_unique_persona_overlays,
-            max_generation_attempts=args.max_generation_attempts,
+        ),
+        generation_policy=GenerationPolicy(
             expansion_batch_size=args.expansion_batch_size,
+            max_generation_attempts=args.max_generation_attempts,
         ),
     )
     write_jsonl(Path(args.output), result.records)

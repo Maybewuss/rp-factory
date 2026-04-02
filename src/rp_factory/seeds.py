@@ -322,6 +322,7 @@ def render_style_message(
     event: str,
     intensity: str,
     rng: Random,
+    persona_overlay: PersonaOverlay | None = None,
     style_templates: dict[str, list[str]] | None = None,
     style_fragments: dict[str, dict[str, list[str]]] | None = None,
     state: DiversityState | None = None,
@@ -371,4 +372,6 @@ def render_style_message(
         rendered = f"{opener}{bridge}，{reaction}{modifier}"
         if rng.random() < 0.7:
             rendered = f"{rendered} {closer}"
+    if persona_overlay:
+        rendered = f"{persona_overlay.prefix_template} {rendered}"
     return _normalize_sentence(rendered)

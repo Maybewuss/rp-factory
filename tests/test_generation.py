@@ -7,15 +7,7 @@ from pathlib import Path
 from random import Random
 
 from src.rp_factory.io_utils import write_jsonl
-from src.rp_factory.models import (
-    DatasetRecord,
-    DiversityState,
-    GenerationTargets,
-    PersonaOverlay,
-    Scenario,
-    SeedPoolSnapshot,
-    TeacherResponse,
-)
+from src.rp_factory.models import DatasetRecord, DiversityState, GenerationPolicy, GenerationTargets, PersonaOverlay, Scenario, SeedPoolSnapshot, TeacherResponse
 from src.rp_factory.pipeline import BuildResult, build_dataset
 from src.rp_factory.quality import extract_code_blocks, run_quality_funnel
 from src.rp_factory.user_generation import generate_user_bundle
@@ -202,12 +194,12 @@ class PipelineTests(unittest.TestCase):
                 seed=11,
                 best_of_n=3,
                 mix_ratio=0.5,
+                generation_policy=GenerationPolicy(expansion_batch_size=2),
                 diversity_targets=GenerationTargets(
                     min_unique_styles=2,
                     min_unique_intents=2,
                     min_unique_events=2,
                     min_unique_persona_overlays=2,
-                    expansion_batch_size=2,
                 ),
             )
 
