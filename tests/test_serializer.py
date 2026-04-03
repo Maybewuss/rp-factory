@@ -32,7 +32,7 @@ def sample_records():
     meta = ConversationMeta(
         system_prompt_source="你是一个高冷的外科医生。",
         pipeline=PipelineTag.PIPELINE_A,
-        quality=QualityResult(verdict=QualityVerdict.PASS, gain_delta=0.7),
+        quality=QualityResult(verdict=QualityVerdict.PASS),
     )
     return [ConversationRecord(messages=messages, meta=meta)]
 

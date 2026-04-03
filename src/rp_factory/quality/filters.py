@@ -1,8 +1,4 @@
-"""质检漏斗。
-
-L1: 正则黑名单 + 代码块穿透检测 + LLM AI 味结构检测
-L2: 目标模型增益过滤（占位符 — 等基座模型就绪后启用）
-"""
+"""质检漏斗：正则黑名单 + 代码块穿透检测 + LLM AI 味结构检测。"""
 
 from __future__ import annotations
 
@@ -18,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 class QualityFilter:
-    """质检漏斗。当前只启用 L1。"""
 
     def __init__(self, config: FactoryConfig, judge_llm: LLMClient | None = None) -> None:
         self.config = config
@@ -31,10 +26,7 @@ class QualityFilter:
             return re.compile(r"(?!)")
         return re.compile("|".join(re.escape(p) for p in patterns), re.IGNORECASE)
 
-    # ---- L1: 硬规则 + LLM 结构检测 ----
-
     def check_persona_blacklist(self, content: str) -> bool:
-        """返回 True 表示通过。"""
         return not self._blacklist_re.search(content)
 
     def check_payload_integrity(self, content: str) -> bool:
@@ -59,12 +51,11 @@ class QualityFilter:
         ]
         try:
             resp = await self.judge_llm.chat_single(messages, temperature=0.0, max_tokens=64)
-            answer = resp["content"].strip().lower()
-            return answer.startswith("pass")
+            return resp["content"].strip().lower().startswith("pass")
         except Exception:
             return True
 
-    async def level1_filter(
+    async def filter(
         self, assistant_msg: Message, system_prompt: str = "",
     ) -> QualityResult:
         content = assistant_msg.content
@@ -79,9 +70,3 @@ class QualityFilter:
             return QualityResult(verdict=QualityVerdict.REJECT_PERSONA, details="LLM 检测到结构性 AI 味")
 
         return QualityResult(verdict=QualityVerdict.PASS)
-
-    # ---- L2: 占位符 ----
-
-    async def level2_gain_filter(self, **kwargs) -> QualityResult:  # type: ignore[override]
-        """增益过滤占位符。等目标基座模型就绪后实现。"""
-        return QualityResult(verdict=QualityVerdict.PASS, details="L2 未启用")

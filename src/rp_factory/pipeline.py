@@ -122,15 +122,15 @@ class DataFactory:
 
             messages.append(Message(role=Role.USER, content=user_content))
 
-            # --- RP Agent 回复 + L1 质检（带重试） ---
+            # --- RP Agent 回复 + 质检（带重试） ---
             assistant_msg = await self._generate_rp_response(system_prompt, messages, pipeline)
 
             for retry in range(MAX_L1_RETRIES):
-                l1 = await self.quality.level1_filter(assistant_msg, system_prompt)
-                if l1.verdict == QualityVerdict.PASS:
+                qc = await self.quality.filter(assistant_msg, system_prompt)
+                if qc.verdict == QualityVerdict.PASS:
                     break
-                logger.info("轮次 %d L1 未通过 (%s), 重试 %d/%d",
-                            turn_idx, l1.details, retry + 1, MAX_L1_RETRIES)
+                logger.info("轮次 %d 质检未通过 (%s), 重试 %d/%d",
+                            turn_idx, qc.details, retry + 1, MAX_L1_RETRIES)
                 assistant_msg = await self._generate_rp_response(system_prompt, messages, pipeline)
 
             messages.append(assistant_msg)

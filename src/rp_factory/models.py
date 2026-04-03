@@ -79,14 +79,10 @@ class QualityVerdict(str, Enum):
     PASS = "pass"
     REJECT_PERSONA = "reject_persona"
     REJECT_TASK = "reject_task"
-    REJECT_LOW_GAIN = "reject_low_gain"
 
 
 class QualityResult(BaseModel):
     verdict: QualityVerdict
-    persona_score: float | None = None
-    task_score: float | None = None
-    gain_delta: float | None = None
     details: str = ""
 
 
