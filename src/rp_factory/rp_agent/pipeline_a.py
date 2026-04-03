@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class PipelineA:
-    """Pipeline A: Mentor 指导 + 认知伪装法生成管线。"""
+    """Pipeline A: Mentor 指导 + 认知伪装 + RP 元指令。"""
 
     def __init__(
         self, config: FactoryConfig, mentor_llm: LLMClient, teacher_llm: LLMClient,
@@ -36,7 +36,9 @@ class PipelineA:
         logger.debug("Pipeline A Hint: %s", hint[:120])
 
         camouflaged_system = prompts.CAMOUFLAGE_WRAPPER.format(
-            system_prompt=system_prompt, hint=hint,
+            system_prompt=system_prompt,
+            meta_instruction=prompts.RP_META_INSTRUCTION,
+            hint=hint,
         )
 
         openai_messages: list[dict[str, str]] = [

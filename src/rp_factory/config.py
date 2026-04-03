@@ -29,7 +29,6 @@ class LLMConfig(BaseModel):
     generator: LLMEndpoint = Field(default_factory=LLMEndpoint)
     teacher: LLMEndpoint = Field(default_factory=LLMEndpoint)
     mentor: LLMEndpoint = Field(default_factory=LLMEndpoint)
-    target: LLMEndpoint = Field(default_factory=LLMEndpoint)
 
 
 class DiversityConfig(BaseModel):
@@ -96,13 +95,8 @@ class Level1QualityConfig(BaseModel):
     payload_lint_enabled: bool = True
 
 
-class Level2QualityConfig(BaseModel):
-    enabled: bool = True
-
-
 class QualityConfig(BaseModel):
     level1: Level1QualityConfig = Field(default_factory=Level1QualityConfig)
-    level2: Level2QualityConfig = Field(default_factory=Level2QualityConfig)
 
 
 class EvaluationConfig(BaseModel):

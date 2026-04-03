@@ -128,14 +128,21 @@ class IcebergEngine:
         self,
         system_prompt: str,
         conversation_history: list[Message] | None = None,
+        deep_intent_override: str | None = None,
     ) -> IcebergLayers:
+        """生成 User 发言。
+
+        Args:
+            deep_intent_override: 复用之前的 deep_intent（同一段对话的心理动机应该贯穿始终）。
+                首轮传 None 触发 step1 生成，后续轮次传首轮的 intent。
+        """
         style = self.styles.pick() if len(self.styles) else "自然随意型"
         has_history = (
             conversation_history
             and any(m.role == Role.ASSISTANT for m in conversation_history)
         )
 
-        deep_intent = await self.step1_reverse_intent(system_prompt)
+        deep_intent = deep_intent_override or await self.step1_reverse_intent(system_prompt)
 
         if has_history:
             user_message = await self.generate_continuation(

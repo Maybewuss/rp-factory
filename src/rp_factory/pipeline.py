@@ -27,6 +27,8 @@ from rp_factory.user_agent.iceberg import IcebergEngine
 
 logger = logging.getLogger(__name__)
 
+MAX_L1_RETRIES = 3
+
 
 class DataFactory:
     """RP 数据合成工厂。"""
@@ -37,15 +39,12 @@ class DataFactory:
         self.generator_llm = LLMClient(config.llm.generator)
         self.teacher_llm = LLMClient(config.llm.teacher)
         self.mentor_llm = LLMClient(config.llm.mentor)
-        self.target_llm = (
-            LLMClient(config.llm.target) if config.llm.target.api_key else None
-        )
 
         self.iceberg = IcebergEngine(config, self.generator_llm)
         self.perturbation = PerturbationEngine(config, self.generator_llm)
         self.pipeline_a = PipelineA(config, self.mentor_llm, self.teacher_llm)
         self.pipeline_b = PipelineB(config, self.teacher_llm, self.mentor_llm)
-        self.quality = QualityFilter(config, self.target_llm, self.mentor_llm)
+        self.quality = QualityFilter(config, self.mentor_llm)
         self.serializer = Serializer(config)
 
         self.persona_gen = PersonaGenerator(self.generator_llm)
@@ -57,7 +56,7 @@ class DataFactory:
 
     async def _generate_rp_response(
         self, system_prompt: str, conversation: list[Message], pipeline: PipelineTag,
-    ) -> Message | None:
+    ) -> Message:
         if pipeline == PipelineTag.PIPELINE_A:
             return await self.pipeline_a.generate_response(system_prompt, conversation)
         return await self.pipeline_b.generate_response(system_prompt, conversation)
@@ -72,7 +71,6 @@ class DataFactory:
         for category, pool, ratio in pools:
             if batch_size > len(pool) * ratio:
                 needed = max(5, batch_size - len(pool))
-                logger.info("%s 池不足，将扩充 %d 条", category, needed)
                 tasks.append(self._expand_pool(category, pool, needed))
 
         if len(self.iceberg.styles) < 10:
@@ -84,7 +82,7 @@ class DataFactory:
     async def _expand_pool(self, category: str, pool: "Pool", count: int) -> None:  # noqa: F821
         new_items = await self.seed_expander.expand(category, count, pool.items)
         added = pool.extend(new_items)
-        logger.info("%s 池扩充完成: +%d, 总计 %d", category, added, len(pool))
+        logger.info("%s 池扩充: +%d → %d", category, added, len(pool))
 
     async def generate_personas(self, count: int) -> list[str]:
         return await self.persona_gen.generate_batch(
@@ -99,8 +97,10 @@ class DataFactory:
 
         messages: list[Message] = [Message(role=Role.SYSTEM, content=system_prompt)]
         perturbations: list[Perturbation] = []
+        deep_intent: str | None = None
 
         for turn_idx in range(turns):
+            # --- User 发言 ---
             perturbed_msg, perturbation = await self.perturbation.maybe_perturb(
                 round_index=turn_idx,
                 system_prompt=system_prompt,
@@ -114,32 +114,28 @@ class DataFactory:
                 iceberg = await self.iceberg.generate(
                     system_prompt,
                     conversation_history=messages if turn_idx > 0 else None,
+                    deep_intent_override=deep_intent,
                 )
                 user_content = iceberg.user_message
+                if deep_intent is None:
+                    deep_intent = iceberg.deep_intent
 
             messages.append(Message(role=Role.USER, content=user_content))
 
+            # --- RP Agent 回复 + L1 质检（带重试） ---
             assistant_msg = await self._generate_rp_response(system_prompt, messages, pipeline)
-            if assistant_msg is None:
-                messages.pop()
-                continue
 
-            l1 = self.quality.level1_filter(assistant_msg)
-            if l1.verdict != QualityVerdict.PASS:
-                retry = await self._generate_rp_response(system_prompt, messages, pipeline)
-                if retry and self.quality.level1_filter(retry).verdict == QualityVerdict.PASS:
-                    assistant_msg = retry
+            for retry in range(MAX_L1_RETRIES):
+                l1 = await self.quality.level1_filter(assistant_msg, system_prompt)
+                if l1.verdict == QualityVerdict.PASS:
+                    break
+                logger.info("轮次 %d L1 未通过 (%s), 重试 %d/%d",
+                            turn_idx, l1.details, retry + 1, MAX_L1_RETRIES)
+                assistant_msg = await self._generate_rp_response(system_prompt, messages, pipeline)
 
             messages.append(assistant_msg)
 
-        last_assistant = next((m for m in reversed(messages) if m.role == Role.ASSISTANT), None)
-        if not last_assistant:
-            return None
-
-        l2 = await self.quality.level2_gain_filter(
-            system_prompt, [m for m in messages if m.role == Role.USER], last_assistant,
-        )
-        if l2.verdict != QualityVerdict.PASS:
+        if not any(m.role == Role.ASSISTANT for m in messages):
             return None
 
         return ConversationRecord(
@@ -148,7 +144,6 @@ class DataFactory:
                 system_prompt_source=system_prompt[:200],
                 pipeline=pipeline,
                 perturbations=perturbations,
-                quality=l2,
             ),
         )
 
@@ -159,15 +154,15 @@ class DataFactory:
         num_turns: int | None = None,
         output_file: str = "output.jsonl",
     ) -> list[ConversationRecord]:
-        prompts = list(system_prompts or [])
-        target_count = count or len(prompts) or 10
+        prompts_list = list(system_prompts or [])
+        target_count = count or len(prompts_list) or 10
 
-        if len(prompts) < target_count:
-            need = target_count - len(prompts)
-            logger.info("需要 %d 条但只有 %d 个角色，自动生成 %d 个", target_count, len(prompts), need)
-            prompts.extend(await self.generate_personas(need))
+        if len(prompts_list) < target_count:
+            need = target_count - len(prompts_list)
+            logger.info("需要 %d 条但只有 %d 个角色，自动生成 %d 个", target_count, len(prompts_list), need)
+            prompts_list.extend(await self.generate_personas(need))
 
-        await self.warmup_seeds(len(prompts))
+        await self.warmup_seeds(len(prompts_list))
 
         sem = asyncio.Semaphore(self.config.pipeline.max_concurrent_conversations)
 
@@ -175,10 +170,10 @@ class DataFactory:
             async with sem:
                 return await self.generate_conversation(sp, num_turns)
 
-        results = await asyncio.gather(*[_one(sp) for sp in prompts])
+        results = await asyncio.gather(*[_one(sp) for sp in prompts_list])
         records = [r for r in results if r is not None]
 
-        logger.info("批次完成: %d/%d 通过质检", len(records), len(prompts))
+        logger.info("批次完成: %d/%d 通过", len(records), len(prompts_list))
 
         if records:
             self.serializer.write_jsonl(records, output_file)

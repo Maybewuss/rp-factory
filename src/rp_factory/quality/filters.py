@@ -1,7 +1,7 @@
-"""模块四：Rejection Sampling 与质检漏斗。
+"""质检漏斗。
 
-第一级：人设校验（黑名单正则）+ 任务校验（代码块无穿透）
-第二级：目标模型增益过滤 (Target-Model-in-the-Loop)
+L1: 正则黑名单 + 代码块穿透检测 + LLM AI 味结构检测
+L2: 目标模型增益过滤（占位符 — 等基座模型就绪后启用）
 """
 
 from __future__ import annotations
@@ -11,23 +11,17 @@ import re
 
 from rp_factory import prompts
 from rp_factory.config import FactoryConfig
-from rp_factory.llm_client import LLMClient, parse_json_response
-from rp_factory.models import Message, QualityResult, QualityVerdict, Role
+from rp_factory.llm_client import LLMClient
+from rp_factory.models import Message, QualityResult, QualityVerdict
 
 logger = logging.getLogger(__name__)
 
 
 class QualityFilter:
-    """两级质检漏斗。"""
+    """质检漏斗。当前只启用 L1。"""
 
-    def __init__(
-        self,
-        config: FactoryConfig,
-        target_llm: LLMClient | None = None,
-        judge_llm: LLMClient | None = None,
-    ) -> None:
+    def __init__(self, config: FactoryConfig, judge_llm: LLMClient | None = None) -> None:
         self.config = config
-        self.target_llm = target_llm
         self.judge_llm = judge_llm
         self._blacklist_re = self._compile_blacklist()
 
@@ -37,7 +31,10 @@ class QualityFilter:
             return re.compile(r"(?!)")
         return re.compile("|".join(re.escape(p) for p in patterns), re.IGNORECASE)
 
+    # ---- L1: 硬规则 + LLM 结构检测 ----
+
     def check_persona_blacklist(self, content: str) -> bool:
+        """返回 True 表示通过。"""
         return not self._blacklist_re.search(content)
 
     def check_payload_integrity(self, content: str) -> bool:
@@ -49,54 +46,42 @@ class QualityFilter:
         )
         return not any(bleed_re.search(block) for block in code_blocks)
 
-    def level1_filter(self, assistant_msg: Message) -> QualityResult:
-        content = assistant_msg.content
-        if not self.check_persona_blacklist(content):
-            return QualityResult(verdict=QualityVerdict.REJECT_PERSONA, details="命中 AI 味黑名单")
-        if self.config.quality.level1.payload_lint_enabled and not self.check_payload_integrity(content):
-            return QualityResult(verdict=QualityVerdict.REJECT_TASK, details="代码块人设穿透")
-        return QualityResult(verdict=QualityVerdict.PASS)
-
-    async def level2_gain_filter(
-        self, system_prompt: str, conversation: list[Message], teacher_msg: Message,
-    ) -> QualityResult:
-        if not self.config.quality.level2.enabled or not self.target_llm or not self.judge_llm:
-            return QualityResult(verdict=QualityVerdict.PASS, details="L2 跳过")
-
-        openai_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
-        for m in conversation:
-            if m.role != Role.SYSTEM:
-                openai_messages.append({"role": m.role.value, "content": m.content})
-
-        target_resp = await self.target_llm.chat_single(openai_messages)
-
-        judge_messages = [
-            {"role": "system", "content": prompts.GAIN_JUDGE},
+    async def check_ai_taste(self, system_prompt: str, content: str) -> bool:
+        """LLM 快速判断是否有结构性 AI 味。返回 True 表示通过。"""
+        if not self.judge_llm:
+            return True
+        messages = [
+            {"role": "system", "content": prompts.AI_TASTE_JUDGE},
             {"role": "user", "content": (
-                f"角色设定：\n{system_prompt}\n\n"
-                f"用户最后发言：\n{conversation[-1].content if conversation else ''}\n\n"
-                f"--- Target ---\n{target_resp['content']}\n\n"
-                f"--- Teacher ---\n{teacher_msg.content}\n\n"
-                f"--- Teacher Reasoning ---\n{teacher_msg.reasoning_content or '(无)'}"
+                f"角色设定（前200字）：\n{system_prompt[:200]}\n\n"
+                f"待检测回复：\n{content}"
             )},
         ]
-        judge_resp = await self.judge_llm.chat_single(judge_messages)
-
         try:
-            data = parse_json_response(judge_resp["content"])
-            has_gain = data.get("has_gain", False)
-            gain_score = float(data.get("gain_score", 0.0))
+            resp = await self.judge_llm.chat_single(messages, temperature=0.0, max_tokens=64)
+            answer = resp["content"].strip().lower()
+            return answer.startswith("pass")
         except Exception:
-            return QualityResult(verdict=QualityVerdict.PASS, gain_delta=0.5)
+            return True
 
-        if not has_gain or gain_score < 0.2:
-            return QualityResult(
-                verdict=QualityVerdict.REJECT_LOW_GAIN,
-                gain_delta=gain_score,
-                details=data.get("reason", ""),
-            )
-        return QualityResult(
-            verdict=QualityVerdict.PASS,
-            gain_delta=gain_score,
-            details=data.get("reason", ""),
-        )
+    async def level1_filter(
+        self, assistant_msg: Message, system_prompt: str = "",
+    ) -> QualityResult:
+        content = assistant_msg.content
+
+        if not self.check_persona_blacklist(content):
+            return QualityResult(verdict=QualityVerdict.REJECT_PERSONA, details="命中 AI 味黑名单")
+
+        if self.config.quality.level1.payload_lint_enabled and not self.check_payload_integrity(content):
+            return QualityResult(verdict=QualityVerdict.REJECT_TASK, details="代码块人设穿透")
+
+        if not await self.check_ai_taste(system_prompt, content):
+            return QualityResult(verdict=QualityVerdict.REJECT_PERSONA, details="LLM 检测到结构性 AI 味")
+
+        return QualityResult(verdict=QualityVerdict.PASS)
+
+    # ---- L2: 占位符 ----
+
+    async def level2_gain_filter(self, **kwargs) -> QualityResult:  # type: ignore[override]
+        """增益过滤占位符。等目标基座模型就绪后实现。"""
+        return QualityResult(verdict=QualityVerdict.PASS, details="L2 未启用")

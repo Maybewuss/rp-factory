@@ -9,9 +9,9 @@ llm:
     max_tokens: 2048
 
   teacher:
-    model: "claude-3-5-sonnet-20241022"
+    model: "deepseek-reasoner"
     base_url: null
-    api_key_env: "ANTHROPIC_API_KEY"
+    api_key_env: "OPENAI_API_KEY"
     temperature: 0.7
     max_tokens: 4096
 
@@ -20,13 +20,6 @@ llm:
     base_url: null
     api_key_env: "OPENAI_API_KEY"
     temperature: 0.3
-    max_tokens: 2048
-
-  target:
-    model: "qwen-max"
-    base_url: null
-    api_key_env: "TARGET_MODEL_API_KEY"
-    temperature: 0.7
     max_tokens: 2048
 
 user_agent:
@@ -84,8 +77,6 @@ quality:
       - "I'm an AI"
       - "As an AI"
     payload_lint_enabled: true
-  level2:
-    enabled: true
 
 evaluation:
   sample_ratio: 0.1

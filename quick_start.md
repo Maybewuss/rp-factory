@@ -21,31 +21,25 @@ rp-factory --help
 export OPENAI_API_KEY="sk-..."
 ```
 
-默认配置中，generator / mentor / teacher / target 四个角色都可以指向同一个 OpenAI-compatible 端点。如果你的不同模型在不同的服务上，修改 `config/default.yaml`：
+默认配置中，generator / mentor / teacher 三个角色都可以指向同一个 OpenAI-compatible 端点。如果你的不同模型在不同的服务上，修改 `config/default.yaml`：
 
 ```yaml
 llm:
-  generator:
+  generator:                           # User 发言生成 + 种子扩充
     model: "gpt-4o"
     api_key_env: "OPENAI_API_KEY"
-  teacher:
+  teacher:                             # RP 角色回复生成（核心）
     model: "deepseek-reasoner"
     base_url: "https://api.deepseek.com/v1"
     api_key_env: "DEEPSEEK_API_KEY"
-  mentor:
+  mentor:                              # Pipeline A 考点拆解 + 质检判断
     model: "gpt-4o"
     api_key_env: "OPENAI_API_KEY"
-  target:                              # 目标基座模型（用于增益过滤）
-    model: "qwen-max"                  # 如果还没有 target，留空 key 即可跳过增益过滤
-    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    api_key_env: "TARGET_MODEL_API_KEY"
 ```
 
 > **所有端点必须兼容 OpenAI Chat Completions API 格式。**
 >
 > **Teacher 模型**建议使用带 `reasoning_content` 能力的模型（如 DeepSeek-R1、OpenAI o1/o3），这样生成的训练数据会包含推理链。
->
-> **Target 模型**是你正在微调的基座模型。系统会把同一组 `[System, User]` 喂给 target 和 teacher，只保留 target 答得差、teacher 答得好的数据。如果你还没有 target 模型，不设 `TARGET_MODEL_API_KEY` 环境变量即可——系统会自动跳过增益过滤。
 
 ## 3. 最快体验：单角色生成
 
@@ -125,7 +119,7 @@ rp-factory -c config/my_config.yaml batch -n 100
 | `rp_agent.pipeline_b.n_samples` | Best-of-N 采样数 | 8 |
 | `context_control.flavored_task.injection_probability` | 风味任务注入概率 | 0.3 |
 | `context_control.memory_poisoning.injection_probability` | 记忆投毒概率 | 0.25 |
-| `quality.level2.enabled` | 增益过滤开关 | true |
+| `quality.level1.payload_lint_enabled` | 代码块穿透检测 | true |
 
 ## 8. 输出格式
 
