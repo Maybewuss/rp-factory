@@ -130,9 +130,9 @@ def batch(
     table.add_row("目标数量", str(target))
     table.add_row("通过质检", str(len(records)))
     table.add_row("废弃率", f"{(1 - len(records) / max(target, 1)) * 100:.1f}%")
-    table.add_row("种子池 (intents)", str(len(factory.iceberg._intent_texts)))
-    table.add_row("种子池 (events)", str(len(factory.iceberg._event_texts)))
-    table.add_row("种子池 (styles)", str(len(factory.iceberg._styles)))
+    table.add_row("种子池 (intents)", str(len(factory.iceberg.intents)))
+    table.add_row("种子池 (events)", str(len(factory.iceberg.events)))
+    table.add_row("种子池 (styles)", str(len(factory.iceberg.styles)))
 
     console.print(table)
 

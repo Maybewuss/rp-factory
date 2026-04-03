@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rp-data-factory"
-version = "3.1.0"
+version = "3.2.0"
 description = "基于认知仿真与对偶动机的 RP 数据合成工厂"
 readme = "README.md"
 requires-python = ">=3.10"
