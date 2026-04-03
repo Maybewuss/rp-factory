@@ -14,11 +14,11 @@ def engine():
     return PerturbationEngine(cfg, LLMClient(cfg.llm.generator))
 
 
-class TestFlavoredTask:
+class TestInterleavedTask:
     def test_create_task_message(self, engine: PerturbationEngine):
-        msg, pert = engine.create_flavored_task_message(round_index=3)
+        msg, pert = engine.create_task_message(round_index=3)
         assert isinstance(msg, str) and len(msg) > 0
-        assert pert.type == PerturbationType.FLAVORED_TASK
+        assert pert.type == PerturbationType.INTERLEAVED_TASK
 
     def test_should_inject_task_wrong_round(self, engine: PerturbationEngine):
         assert not engine.should_inject_task(0)

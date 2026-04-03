@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 import random
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from rp_factory.llm_client import LLMClient, parse_json_response
 
@@ -262,3 +265,150 @@ class SeedExpander:
         except Exception:
             logger.warning("扩充 [%s] 解析失败", category)
             return []
+
+
+# ---------------------------------------------------------------------------
+# 种子持久化扩充（写回 YAML 文件）
+# ---------------------------------------------------------------------------
+
+_SEEDS_DIR = Path(__file__).resolve().parent.parent.parent / "seeds"
+
+
+def _load_yaml(path: Path) -> list[Any]:
+    if not path.exists():
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or []
+
+
+def _save_yaml(path: Path, data: list[Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+
+async def expand_seeds_to_file(
+    expander: SeedExpander,
+    category: str,
+    count: int,
+) -> tuple[int, int]:
+    """LLM 扩充种子并写回对应 YAML 文件。
+
+    Returns:
+        (新增数量, 扩充后总数)
+    """
+    if category == "intents":
+        return await _expand_intents_file(expander, count)
+    elif category == "events":
+        return await _expand_events_file(expander, count)
+    elif category == "styles":
+        return await _expand_styles_file(expander, count)
+    elif category == "tasks":
+        return await _expand_tasks_file(expander, count)
+    else:
+        logger.warning("未知种子类别: %s", category)
+        return 0, 0
+
+
+async def _expand_intents_file(expander: SeedExpander, count: int) -> tuple[int, int]:
+    path = _SEEDS_DIR / "deep_intents.yaml"
+    existing = _load_yaml(path)
+    existing_texts = {item.get("seed", "") for item in existing}
+
+    new_items = await expander.expand("intents", count, list(existing_texts))
+
+    added = 0
+    for text in new_items:
+        if isinstance(text, str) and text and text not in existing_texts:
+            existing.append({"category": "llm_generated", "intensity": "medium", "seed": text})
+            existing_texts.add(text)
+            added += 1
+
+    _save_yaml(path, existing)
+    return added, len(existing)
+
+
+async def _expand_events_file(expander: SeedExpander, count: int) -> tuple[int, int]:
+    path = _SEEDS_DIR / "proxy_events.yaml"
+    existing = _load_yaml(path)
+
+    all_events: set[str] = set()
+    for cat in existing:
+        for ev in cat.get("events", []):
+            all_events.add(ev)
+
+    new_items = await expander.expand("events", count, list(all_events))
+
+    llm_cat = None
+    for cat in existing:
+        if cat.get("category") == "llm_generated":
+            llm_cat = cat
+            break
+    if llm_cat is None:
+        llm_cat = {"category": "llm_generated", "events": []}
+        existing.append(llm_cat)
+
+    added = 0
+    for text in new_items:
+        if isinstance(text, str) and text and text not in all_events:
+            llm_cat["events"].append(text)
+            all_events.add(text)
+            added += 1
+
+    _save_yaml(path, existing)
+    total = sum(len(cat.get("events", [])) for cat in existing)
+    return added, total
+
+
+async def _expand_styles_file(expander: SeedExpander, count: int) -> tuple[int, int]:
+    """styles 存在 config 里而非独立 YAML，写到 seeds/user_styles.yaml。"""
+    path = _SEEDS_DIR / "user_styles.yaml"
+    existing: list[str] = _load_yaml(path) or []
+    existing_set = set(existing)
+
+    new_items = await expander.expand("styles", count, existing)
+
+    added = 0
+    for text in new_items:
+        if isinstance(text, str) and text and text not in existing_set:
+            existing.append(text)
+            existing_set.add(text)
+            added += 1
+
+    _save_yaml(path, existing)
+    return added, len(existing)
+
+
+async def _expand_tasks_file(expander: SeedExpander, count: int) -> tuple[int, int]:
+    path = _SEEDS_DIR / "interleaved_tasks.yaml"
+    existing = _load_yaml(path)
+
+    existing_prompts: set[str] = set()
+    for cat in existing:
+        for task in cat.get("tasks", []):
+            existing_prompts.add(task.get("prompt", ""))
+
+    new_items = await expander.expand("tasks", count, list(existing_prompts))
+
+    llm_cat = None
+    for cat in existing:
+        if cat.get("type") == "llm_generated":
+            llm_cat = cat
+            break
+    if llm_cat is None:
+        llm_cat = {"type": "llm_generated", "tasks": []}
+        existing.append(llm_cat)
+
+    added = 0
+    for item in new_items:
+        if isinstance(item, dict) and item.get("prompt") and item["prompt"] not in existing_prompts:
+            llm_cat["tasks"].append({
+                "prompt": item["prompt"],
+                "payload": item.get("payload") or None,
+            })
+            existing_prompts.add(item["prompt"])
+            added += 1
+
+    _save_yaml(path, existing)
+    total = sum(len(cat.get("tasks", [])) for cat in existing)
+    return added, total

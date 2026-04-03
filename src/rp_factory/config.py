@@ -47,7 +47,7 @@ class UserAgentConfig(BaseModel):
     iceberg: IcebergConfig = Field(default_factory=IcebergConfig)
 
 
-class FlavoredTaskConfig(BaseModel):
+class InterleavedTaskConfig(BaseModel):
     injection_probability: float = 0.3
     injection_rounds: list[int] = Field(default_factory=lambda: [3, 4, 5])
 
@@ -64,7 +64,7 @@ class CognitiveTranslationConfig(BaseModel):
 
 
 class ContextControlConfig(BaseModel):
-    flavored_task: FlavoredTaskConfig = Field(default_factory=FlavoredTaskConfig)
+    interleaved_task: InterleavedTaskConfig = Field(default_factory=InterleavedTaskConfig)
     memory_poisoning: MemoryPoisoningConfig = Field(default_factory=MemoryPoisoningConfig)
     cognitive_translation: CognitiveTranslationConfig = Field(default_factory=CognitiveTranslationConfig)
 

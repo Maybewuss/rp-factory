@@ -43,7 +43,7 @@ class IcebergLayers(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PerturbationType(str, Enum):
-    FLAVORED_TASK = "flavored_task"
+    INTERLEAVED_TASK = "interleaved_task"
     MEMORY_POISON = "memory_poison"
     COGNITIVE_TRANSLATION = "cognitive_translation"
 

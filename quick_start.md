@@ -255,7 +255,7 @@ rp-factory gen-personas -n 3
 - `reasoning_content` — Teacher 模型的推理链（只有用带 reasoning 能力的模型才会有值）
 - `_meta` — 溯源信息，**不进入训练**，仅用于事后分析
 - `_meta.pipeline` — 这条数据是 `pipeline_a`（Mentor 指导）还是 `pipeline_b`（Best-of-N 采样）生成的
-- `_meta.perturbations` — 对话中注入了哪些扰动（风味任务 / 记忆投毒 / 认知转译）
+- `_meta.perturbations` — 对话中注入了哪些扰动（穿插任务 / 记忆投毒 / 认知转译）
 
 ### 训练版 JSONL（纯净）
 
@@ -281,8 +281,8 @@ rp-factory show-config
 | `rp_agent.mix_ratio.pipeline_a` | Pipeline A 占比（0~1） | 0.5 |
 | `rp_agent.pipeline_b.n_samples` | Pipeline B 每轮采样数 | 8 |
 | `rp_agent.pipeline_b.temperature` | Pipeline B 采样温度 | 0.9 |
-| `context_control.flavored_task.injection_probability` | 风味任务注入概率 | 0.3 |
-| `context_control.flavored_task.injection_rounds` | 哪些轮次可能注入任务 | [3, 4, 5] |
+| `context_control.interleaved_task.injection_probability` | 穿插任务注入概率 | 0.3 |
+| `context_control.interleaved_task.injection_rounds` | 哪些轮次可能注入任务 | [3, 4, 5] |
 | `context_control.memory_poisoning.injection_probability` | 记忆投毒概率 | 0.25 |
 | `quality.level1.persona_blacklist_patterns` | AI 味正则黑名单 | 见 default.yaml |
 | `quality.level1.payload_lint_enabled` | 代码块穿透检测开关 | true |
@@ -296,6 +296,30 @@ cp config/default.yaml config/my_config.yaml
 # 编辑 my_config.yaml ...
 rp-factory -c config/my_config.yaml batch -n 100
 ```
+
+---
+
+## 种子扩充
+
+种子库（深层动机、表面事件、用户风格、穿插任务）决定了生成数据的多样性上限。项目自带了一批手写种子，但大批量生产前建议先用 LLM 扩充：
+
+```bash
+# 全部类别各扩充 20 条
+rp-factory expand-seeds -n 20
+
+# 只扩充特定类别
+rp-factory expand-seeds -c intents -c events -n 30
+```
+
+可选类别：
+- `intents` — 深层心理动机（写入 `seeds/deep_intents.yaml`）
+- `events` — 琐碎倒霉事件（写入 `seeds/proxy_events.yaml`）
+- `styles` — 用户说话风格标签（写入 `seeds/user_styles.yaml`）
+- `tasks` — 穿插任务（写入 `seeds/interleaved_tasks.yaml`）
+
+扩充结果会直接追加到对应 YAML 文件中并自动去重，可以人工审核后再跑数据生产。
+
+> 运行时如果种子池不够用，`batch` 命令也会自动临时扩充（但不会写回文件）。`expand-seeds` 的好处是跑一次、后续所有批次都能用、可以审核质量。
 
 ---
 
@@ -334,7 +358,7 @@ print(f"生成了 {len(records)} 条数据")
 ├── seeds/
 │   ├── deep_intents.yaml          深层动机种子（32 条）
 │   ├── proxy_events.yaml          表面事件种子（65 条）
-│   └── flavored_tasks.yaml        风味任务种子（33 条）
+│   └── interleaved_tasks.yaml     穿插任务种子（33 条）
 ├── examples/
 │   ├── surgeon.txt                示例角色：冷酷外科医生
 │   └── tang_poet.txt              示例角色：唐代诗人李白

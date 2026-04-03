@@ -1,4 +1,4 @@
-"""模块二：语境控制与异常处理 — 风味任务注入、记忆投毒、认知转译。"""
+"""语境控制与异常处理 — 穿插任务注入、记忆投毒、认知转译。"""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 _SEEDS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "seeds"
 
 
-def _load_flavored_tasks() -> list[dict[str, str]]:
-    path = _SEEDS_DIR / "flavored_tasks.yaml"
+def _load_interleaved_tasks() -> list[dict[str, str]]:
+    path = _SEEDS_DIR / "interleaved_tasks.yaml"
     if not path.exists():
         return []
     with open(path, "r", encoding="utf-8") as f:
@@ -47,15 +47,15 @@ class PerturbationEngine:
     def __init__(self, config: FactoryConfig, llm: LLMClient) -> None:
         self.config = config
         self.llm = llm
-        self.tasks = Pool(_load_flavored_tasks())
+        self.tasks = Pool(_load_interleaved_tasks())
 
     def should_inject_task(self, round_index: int) -> bool:
-        cfg = self.config.context_control.flavored_task
+        cfg = self.config.context_control.interleaved_task
         if round_index not in cfg.injection_rounds:
             return False
         return random.random() < cfg.injection_probability
 
-    def create_flavored_task_message(self, round_index: int) -> tuple[str, Perturbation]:
+    def create_task_message(self, round_index: int) -> tuple[str, Perturbation]:
         if not len(self.tasks):
             task = {"prompt": "帮我把这段话翻译成英文：", "payload": "明天三点的会议改到五点。"}
         else:
@@ -64,7 +64,7 @@ class PerturbationEngine:
         if task.get("payload"):
             msg += "\n\n" + task["payload"]
         return msg, Perturbation(
-            type=PerturbationType.FLAVORED_TASK,
+            type=PerturbationType.INTERLEAVED_TASK,
             round_index=round_index,
             detail=task["prompt"][:100],
         )
@@ -133,7 +133,7 @@ class PerturbationEngine:
         conversation_history: list[Message],
     ) -> tuple[str | None, Perturbation | None]:
         if self.should_inject_task(round_index):
-            return self.create_flavored_task_message(round_index)
+            return self.create_task_message(round_index)
         if self.should_inject_poison(round_index):
             return await self.create_memory_poison_message(conversation_history, round_index)
         if self.needs_cognitive_translation(system_prompt) and round_index >= 3 and random.random() < 0.2:

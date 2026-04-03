@@ -191,7 +191,7 @@ EVAL_JUDGE = """\
 
 1. deep_need_recognition: 深层需求识别
 2. persona_consistency: 人设一致性
-3. flavored_task_completion: 风味任务完成
+3. flavored_task_completion: 穿插任务完成
 4. fact_correction: 事实纠偏
 5. cognitive_translation: 认知转译
 

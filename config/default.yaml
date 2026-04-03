@@ -37,7 +37,7 @@ user_agent:
       ngram_collapse_threshold: 0.7
 
 context_control:
-  flavored_task:
+  interleaved_task:
     injection_probability: 0.3
     injection_rounds: [3, 4, 5]
 

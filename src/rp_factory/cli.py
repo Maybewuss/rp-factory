@@ -208,6 +208,51 @@ def inspect(ctx: click.Context, jsonl_file: str, sample: int) -> None:
 
 
 @main.command()
+@click.option("--category", "-c", multiple=True, default=None,
+              help="要扩充的类别（可多选）：intents / events / styles / tasks。不指定则全部扩充。")
+@click.option("--count", "-n", default=10, type=int, help="每个类别生成多少条")
+@click.pass_context
+def expand_seeds(ctx: click.Context, category: tuple[str, ...], count: int) -> None:
+    """调用 LLM 扩充种子库并写回 YAML 文件持久化。
+
+    \b
+    示例：
+      rp-factory expand-seeds -n 20                    # 全部类别各扩充 20 条
+      rp-factory expand-seeds -c intents -c events -n 15  # 只扩充动机和事件
+    """
+    cfg: FactoryConfig = ctx.obj["config"]
+
+    all_categories = ["intents", "events", "styles", "tasks"]
+    targets = list(category) if category else all_categories
+
+    for c in targets:
+        if c not in all_categories:
+            console.print(f"[bold red]未知类别: {c}[/]（可选：{', '.join(all_categories)}）")
+            sys.exit(1)
+
+    from rp_factory.generators import SeedExpander, expand_seeds_to_file
+    from rp_factory.llm_client import LLMClient
+
+    expander = SeedExpander(LLMClient(cfg.llm.generator))
+
+    async def _run() -> None:
+        table = Table(title="种子扩充结果")
+        table.add_column("类别", style="bold")
+        table.add_column("新增", justify="right")
+        table.add_column("总数", justify="right")
+
+        for c in targets:
+            console.print(f"[dim]扩充 {c} (×{count})...[/]")
+            added, total = await expand_seeds_to_file(expander, c, count)
+            table.add_row(c, str(added), str(total))
+
+        console.print(table)
+        console.print("[bold green]种子已写回 seeds/ 目录[/]")
+
+    asyncio.run(_run())
+
+
+@main.command()
 @click.pass_context
 def show_config(ctx: click.Context) -> None:
     """显示当前生效的配置。"""

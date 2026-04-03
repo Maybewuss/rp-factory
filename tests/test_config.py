@@ -37,6 +37,6 @@ def test_config_user_styles():
 
 def test_config_context_control():
     cfg = load_config()
-    assert cfg.context_control.flavored_task.injection_probability == 0.3
+    assert cfg.context_control.interleaved_task.injection_probability == 0.3
     assert cfg.context_control.memory_poisoning.injection_probability == 0.25
-    assert 3 in cfg.context_control.flavored_task.injection_rounds
+    assert 3 in cfg.context_control.interleaved_task.injection_rounds
