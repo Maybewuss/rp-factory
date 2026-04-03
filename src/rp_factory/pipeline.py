@@ -37,7 +37,9 @@ class DataFactory:
         self.generator_llm = LLMClient(config.llm.generator)
         self.teacher_llm = LLMClient(config.llm.teacher)
         self.mentor_llm = LLMClient(config.llm.mentor)
-        self.target_llm = LLMClient(config.llm.target)
+        self.target_llm = (
+            LLMClient(config.llm.target) if config.llm.target.api_key else None
+        )
 
         self.iceberg = IcebergEngine(config, self.generator_llm)
         self.perturbation = PerturbationEngine(config, self.generator_llm)

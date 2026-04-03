@@ -42,7 +42,7 @@ def main(ctx: click.Context, config: str | None, verbose: bool) -> None:
 @main.command()
 @click.argument("system_prompt_file", type=click.Path(exists=True))
 @click.option("--turns", "-t", default=None, type=int, help="对话轮数")
-@click.option("--output", "-o", default="output.jsonl", help="输出文件名")
+@click.option("--output", "-o", default="output.jsonl", help="输出文件路径")
 @click.pass_context
 def generate(
     ctx: click.Context,
@@ -76,10 +76,12 @@ def generate(
 
 
 @main.command()
-@click.argument("prompts_dir", type=click.Path(exists=True), required=False, default=None)
+@click.option("--prompts-dir", "-d", default=None, type=click.Path(exists=True),
+              help="角色 System Prompt 目录（每个 .txt 文件一个角色）")
 @click.option("--turns", "-t", default=None, type=int, help="对话轮数")
-@click.option("--output", "-o", default="batch_output.jsonl", help="输出文件名")
-@click.option("--count", "-n", default=None, type=int, help="生成对话总数（超出角色数量时自动 LLM 生成新角色）")
+@click.option("--output", "-o", default="batch_output.jsonl", help="输出文件路径")
+@click.option("--count", "-n", default=None, type=int,
+              help="生成对话总数（超出角色数量时自动 LLM 生成新角色）")
 @click.pass_context
 def batch(
     ctx: click.Context,
@@ -92,8 +94,8 @@ def batch(
 
     \b
     示例：
-      rp-factory batch examples/ -n 50     # 从文件加载角色，不足 50 个时自动生成
-      rp-factory batch -n 100              # 完全自动生成 100 个角色
+      rp-factory batch -d examples/ -n 50   # 从文件加载角色，不足 50 个时自动生成
+      rp-factory batch -n 100               # 完全自动生成 100 个角色
     """
     cfg: FactoryConfig = ctx.obj["config"]
 
